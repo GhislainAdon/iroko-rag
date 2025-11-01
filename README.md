@@ -27,9 +27,9 @@
 
 ---
 
-#### 🚨 **New Release:** [PageIndex MCP](https://github.com/VectifyAI/pageindex-mcp)
-
-Bring PageIndex into Claude, Cursor, and any MCP-enabled agent. Chat to long PDFs the human-like, reasoning-based way 📖
+### 🚨 **New Releases:** 
+- 📑 [PageIndex Chat](https://chat.pageindex.ai): The world's first human-like document analyst agent, designed for professional long documents.
+- 🔌 [PageIndex MCP](https://github.com/VectifyAI/pageindex-mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agents. Chat to long PDFs the human-like, reasoning-based way 📖
 
 # 📄 Introduction to PageIndex
 
