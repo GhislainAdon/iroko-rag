@@ -31,7 +31,7 @@
 
 Bring PageIndex into Claude, Cursor, and any MCP-enabled agent. Chat to long PDFs the human-like, reasoning-based way 📖
 
-#  📄 Introduction to PageIndex
+# 📄 Introduction to PageIndex
 
 Are you frustrated with vector database retrieval accuracy for long professional documents? Traditional vector-based RAG relies on semantic *similarity* rather than true *relevance*. But **similarity ≠ relevance** — what we truly need in retrieval is **relevance**, and that requires **reasoning**. When working with professional documents that demand domain expertise and multi-step reasoning, similarity search often falls short.
 
@@ -54,9 +54,9 @@ Compared to traditional vector-based RAG, PageIndex features:
 
 PageIndex powers a reasoning-based RAG system that achieved [98.7% accuracy](https://github.com/VectifyAI/Mafin2.5-FinanceBench) on FinanceBench, showing state-of-the-art performance in professional document analysis (see our [blog post](https://vectify.ai/blog/Mafin2.5) for details).
 
-### 🚀 Deployment Options
+### ⚙️ Deployment Options
 - 🛠️ Self-host — run locally with this open-source repo
-- ☁️ **[Cloud Service](https://dash.pageindex.ai/)** — try instantly with our 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart), no setup required
+- ☁️ **[Cloud Service](https://dash.pageindex.ai/)** — try instantly with our 🚀 [Agent](https://chat.pageindex.ai/), 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart), no setup required
 
 ### ⚡ Quick Hands-on
 
@@ -102,11 +102,11 @@ Here is an example output. See more [example documents](https://github.com/Vecti
 ...
 ```
 
- You can either generate the PageIndex tree structure with this open-source repo or try our ☁️ **[Cloud Service](https://dash.pageindex.ai/)** — instantly accessible via our 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart), with no setup required.
+ You can either generate the PageIndex tree structure with this open-source repo or try our ☁️ **[Cloud Service](https://dash.pageindex.ai/)** — instantly accessible via our 🚀 [Agent](https://chat.pageindex.ai/), 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart), with no setup required.
 
 ---
 
-# 🚀 Package Usage
+# Package Usage
 
 You can follow these steps to generate a PageIndex tree from a PDF document.
 
