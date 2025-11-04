@@ -104,7 +104,7 @@ Here is an example output. See more [example documents](https://github.com/Vecti
 ...
 ```
 
- You can either generate the PageIndex tree structure with this open-source repo or try our ☁️ **[Cloud Service](https://dash.pageindex.ai/)** — instantly accessible via our 🚀 [Agent](https://chat.pageindex.ai/), 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart), with no setup required.
+ You can either generate the PageIndex tree structure with this open-source repo or try our ☁️ **Cloud Service** — instantly accessible via our 🚀 [Agent](https://chat.pageindex.ai/), 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart), with no setup required.
 
 ---
 
