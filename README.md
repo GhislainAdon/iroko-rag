@@ -28,10 +28,10 @@
 ---
 
 ### 🚨 **New Releases:** 
-- 📑 [PageIndex Chat](https://chat.pageindex.ai): The world's first human-like document analyst agent, designed for professional long documents.
+- 📖 [PageIndex Chat](https://chat.pageindex.ai): The world's first human-like document analyst agent, designed for professional long documents.
 - 🔌 [PageIndex MCP](https://github.com/VectifyAI/pageindex-mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agents. Chat to long PDFs the human-like, reasoning-based way 📖
 
-# 📄 Introduction to PageIndex
+# 📑 Introduction to PageIndex
 
 Are you frustrated with vector database retrieval accuracy for long professional documents? Traditional vector-based RAG relies on semantic *similarity* rather than true *relevance*. But **similarity ≠ relevance** — what we truly need in retrieval is **relevance**, and that requires **reasoning**. When working with professional documents that demand domain expertise and multi-step reasoning, similarity search often falls short.
 
@@ -41,10 +41,10 @@ Inspired by AlphaGo, we propose **[PageIndex](https://vectify.ai/pageindex)**, a
 2. Perform reasoning-based retrieval through **tree search**
 
 <div align="center">
-    <img src="https://docs.pageindex.ai/images/cookbook/vectorless-rag.png" width="90%">
+    <img src="https://docs.pageindex.ai/images/cookbook/vectorless-rag.png" width="70%">
 </div>
 
-### 💡 Features 
+### 🧩 Features 
 
 Compared to traditional vector-based RAG, PageIndex features:
 - **No Vectors Needed**: Uses document structure and LLM reasoning for retrieval.
@@ -56,15 +56,14 @@ PageIndex powers a reasoning-based RAG system that achieved [98.7% accuracy](htt
 
 ### ⚙️ Deployment Options
 - 🛠️ Self-host — run locally with this open-source repo
-- ☁️ **[Cloud Service](https://dash.pageindex.ai/)** — try instantly with our 🚀 [Agent](https://chat.pageindex.ai/), 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart), no setup required
+- ☁️ **Cloud Service** — try instantly with our 🚀 [Agent](https://chat.pageindex.ai/), 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart), no setup required
 
 ### 🧪 Quick Hands-on
 
-Check out this simple [*Vectorless RAG Notebook*](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb) — a minimal, hands-on, reasoning-based RAG pipeline using **PageIndex**.
-
-Also try the [*Vision-based Vectorless RAG*](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb) — no OCR; a reasoning-native RAG pipeline that works directly over page images.
-
+- Check out this simple [*Vectorless RAG Notebook*](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb) — a minimal, hands-on, reasoning-based RAG pipeline using **PageIndex**.
+- Also experience the [*Vision-based Vectorless RAG*](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb) — no OCR; a reasoning-native RAG pipeline that works directly over page images.
 <p align="center">
+  
 <a href="https://colab.research.google.com/github/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb">
     <img src="https://img.shields.io/badge/Open_In_Colab-Vectorless_RAG_With_PageIndex-orange?style=for-the-badge&logo=googlecolab" alt="Open in Colab"/>
   </a>
@@ -173,7 +172,7 @@ To address this, we introduced PageIndex OCR — the first long-context OCR mode
 - Integrate seamlessly PageIndex OCR into your stack via our [API](https://docs.pageindex.ai/quickstart).
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/eb35d8ae-865c-4e60-a33b-ebbd00c41732" width="90%">
+  <img src="https://github.com/user-attachments/assets/eb35d8ae-865c-4e60-a33b-ebbd00c41732" width="70%">
 </p>
 
 ---
