@@ -60,7 +60,7 @@ PageIndex powers a reasoning-based RAG system that achieved [98.7% accuracy](htt
 
 ### 🧪 Quick Hands-on
 
-- Check out this simple [*Vectorless RAG Notebook*](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb) — a minimal, hands-on, reasoning-based RAG pipeline using **PageIndex**.
+- Check out this simple [_**Vectorless RAG Notebook**_](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb) — a minimal, hands-on, reasoning-based RAG pipeline using **PageIndex**.
 - Also experience the [*Vision-based Vectorless RAG*](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb) — no OCR; a reasoning-native RAG pipeline that works directly over page images.
 <p align="center">
   
@@ -71,7 +71,7 @@ PageIndex powers a reasoning-based RAG system that achieved [98.7% accuracy](htt
 
 ---
 
-# 📦 PageIndex Tree Structure
+# 🌲 PageIndex Tree Structure
 PageIndex can transform lengthy PDF documents into a semantic **tree structure**, similar to a _"table of contents"_ but optimized for use with Large Language Models (LLMs). It's ideal for: financial reports, regulatory filings, academic textbooks, legal or technical manuals, and any document that exceeds LLM context limits.
 
 Here is an example output. See more [example documents](https://github.com/VectifyAI/PageIndex/tree/main/tests/pdfs) and [generated trees](https://github.com/VectifyAI/PageIndex/tree/main/tests/results).
@@ -108,7 +108,7 @@ Here is an example output. See more [example documents](https://github.com/Vecti
 
 ---
 
-# Package Usage
+# 📦 Package Usage
 
 You can follow these steps to generate a PageIndex tree from a PDF document.
 
@@ -172,7 +172,7 @@ To address this, we introduced PageIndex OCR — the first long-context OCR mode
 - Integrate seamlessly PageIndex OCR into your stack via our [API](https://docs.pageindex.ai/quickstart).
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/eb35d8ae-865c-4e60-a33b-ebbd00c41732" width="70%">
+  <img src="https://github.com/user-attachments/assets/eb35d8ae-865c-4e60-a33b-ebbd00c41732" width="80%">
 </p>
 
 ---
