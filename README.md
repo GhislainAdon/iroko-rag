@@ -29,7 +29,7 @@
 
 ## 🚨 **New Releases:** 
 - 📖 [**PageIndex Chat**](https://chat.pageindex.ai): World's first human-like document analyst agent, designed for professional long documents.
-- 🔌 [**PageIndex MCP**](https://pageinde.ai/mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agent. Chat with long PDFs the reasoning-based, human-like way.
+- 🔌 [**PageIndex MCP**](https://pageindex.ai/mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agent. Chat with long PDFs the reasoning-based, human-like way.
 
 # 📑 Introduction to PageIndex
 
@@ -104,7 +104,7 @@ Here is an example output. See more [example documents](https://github.com/Vecti
 ...
 ```
 
- You can either generate the PageIndex tree structure with this open-source repo or try our ☁️ **Cloud Service** — instantly accessible via our 🚀 [Agent](https://chat.pageindex.ai/), 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart), with no setup required.
+ You can either generate the PageIndex tree structure with this open-source repo, or try our ☁️ **Cloud Service** — instantly accessible via our 🚀 [Agent](https://chat.pageindex.ai/), 🖥️ [Dashboard](https://dash.pageindex.ai/) or 🔌 [API](https://docs.pageindex.ai/quickstart).
 
 ---
 
