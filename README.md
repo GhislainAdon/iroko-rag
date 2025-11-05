@@ -27,9 +27,20 @@
 
 ---
 
-## 🚨 **New Releases:** 
+### 🚨 New Releases:
 - 📖 [**PageIndex Chat**](https://chat.pageindex.ai): World's first human-like document analyst agent, designed for professional long documents.
 - 🔌 [**PageIndex MCP**](https://pageindex.ai/mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agent. Chat with long PDFs the reasoning-based, human-like way.
+
+### 📢 Recent Updates
+
+#### 📝 Articles:
+* 🧩 [**“PageIndex: Next-Gen Vectorless, Reasoning-based RAG”**](https://pageindex.ai/blog/pageindex-intro): Introduces the **PageIndex** framework — an **agentic in-context index** that enables LLMs to perform **reasoning-based, human-like retrieval** over long documents, without vectors or chunking.
+* 🧾 [**“Do We Still Need OCR?”**](https://pageindex.ai/blog/do-we-need-ocr): Explores how vision-based, reasoning-native RAG challenges the traditional OCR pipeline — and why the future of document AI might be *vectorless* and *vision-based*.
+
+#### 🧪 **Cookbooks:**
+* [**Vectorless RAG**](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb): A minimal, hands-on example of reasoning-based RAG using **PageIndex** — no vectors, no chunking, and human-like retrieval.
+* [**Vision-based Vectorless RAG**](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb): Experience OCR-free document understanding through PageIndex’s visual retrieval workflow — retrieving and reasoning directly over PDF page images.
+
 
 # 📑 Introduction to PageIndex
 
@@ -162,7 +173,7 @@ python3 run_pageindex.py --md_path /path/to/your/document.md
 
 ---
 
-# ☁️ Improved Tree Generation with PageIndex OCR
+<!-- # ☁️ Improved Tree Generation with PageIndex OCR
 
 This repo is designed for generating PageIndex tree structure for simple PDFs, but many real-world use cases involve complex PDFs that are hard to parse by classic Python tools. However, extracting high-quality text from PDF documents remains a non-trivial challenge. Most OCR tools only extract page-level content, losing the broader document context and hierarchy.
 
@@ -175,7 +186,7 @@ To address this, we introduced PageIndex OCR — the first long-context OCR mode
   <img src="https://github.com/user-attachments/assets/eb35d8ae-865c-4e60-a33b-ebbd00c41732" width="80%">
 </p>
 
----
+--- -->
 
 # 📈 Case Study: Mafin 2.5 on FinanceBench
 
