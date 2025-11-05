@@ -11,7 +11,7 @@
   <a href="https://trendshift.io/repositories/14736" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14736" alt="VectifyAI%2FPageIndex | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </p>
 
-<p align="center"><i>Reasoning-based RAG&nbsp; ◦ &nbsp;No Vector DB&nbsp; ◦ &nbsp;No Chunking&nbsp; ◦ &nbsp;Human-like Retrieval</i></p>
+<p align="center">Reasoning-based RAG&nbsp; ◦ &nbsp;No Vector DB&nbsp; ◦ &nbsp;No Chunking&nbsp; ◦ &nbsp;Human-like Retrieval</p>
 
 <h4 align="center">
   <a href="https://vectify.ai">🏠 Homepage</a>&nbsp; • &nbsp;
@@ -33,13 +33,13 @@
 
 ### 📢 Recent Updates
 
-#### 📝 Articles:
-* 🧩 [**“PageIndex: Next-Gen Vectorless, Reasoning-based RAG”**](https://pageindex.ai/blog/pageindex-intro): Introduces the **PageIndex** framework — an **agentic in-context index** that enables LLMs to perform **reasoning-based, human-like retrieval** over long documents, without vectors or chunking.
-* 🧾 [**“Do We Still Need OCR?”**](https://pageindex.ai/blog/do-we-need-ocr): Explores how vision-based, reasoning-native RAG challenges the traditional OCR pipeline — and why the future of document AI might be *vectorless* and *vision-based*.
+#### Articles:
+* 🧩 [**"PageIndex: Next-Gen Vectorless, Reasoning-based RAG"**](https://pageindex.ai/blog/pageindex-intro): Introduces the **PageIndex** framework — an **agentic in-context tree index** that enables LLMs to perform **reasoning-based, human-like retrieval** over long documents, without vectors or chunking.
+* ["Do We Still Need OCR?"](https://pageindex.ai/blog/do-we-need-ocr): Explores how vision-based, reasoning-native RAG challenges the traditional OCR pipeline — and why the future of document AI might be *vectorless* and *vision-based*.
 
 #### 🧪 **Cookbooks:**
 * [**Vectorless RAG**](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb): A minimal, hands-on example of reasoning-based RAG using **PageIndex** — no vectors, no chunking, and human-like retrieval.
-* [**Vision-based Vectorless RAG**](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb): Experience OCR-free document understanding through PageIndex’s visual retrieval workflow — retrieving and reasoning directly over PDF page images.
+* [Vision-based Vectorless RAG](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb): Experience OCR-free document understanding through PageIndex’s visual retrieval workflow — retrieving and reasoning directly over PDF page images.
 
 
 # 📑 Introduction to PageIndex
