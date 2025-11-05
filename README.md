@@ -75,10 +75,15 @@ PageIndex powers a reasoning-based RAG system that achieved [98.7% accuracy](htt
 - Experiment with the [*Vision-based Vectorless RAG*](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb) — no OCR; a minimal, reasoning-native RAG pipeline that works directly over page images.
 <p align="center">
   
-<a href="https://colab.research.google.com/github/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb">
-    <img src="https://img.shields.io/badge/Open_In_Colab-Vectorless_RAG_With_PageIndex-orange?style=for-the-badge&logo=googlecolab" alt="Open in Colab"/>
+<div align="center">
+  <a href="https://colab.research.google.com/github/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb" target="_blank" rel="noopener">
+    <img src="https://img.shields.io/badge/Open_In_Colab-Vectorless_RAG-orange?style=for-the-badge&logo=googlecolab" alt="Open in Colab: Vectorless RAG" />
   </a>
-</p>
+  &nbsp;&nbsp;
+  <a href="https://colab.research.google.com/github/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb" target="_blank" rel="noopener">
+    <img src="https://img.shields.io/badge/Open_In_Colab-Vision_RAG-orange?style=for-the-badge&logo=googlecolab" alt="Open in Colab: Vision RAG" />
+  </a>
+</div>
 
 ---
 
@@ -188,13 +193,13 @@ To address this, we introduced PageIndex OCR — the first long-context OCR mode
 
 --- -->
 
-# 📈 Case Study: Mafin 2.5 on FinanceBench
+# 📈 Case Study: SOTA on Finance QA Benchmark
 
-[Mafin 2.5](https://vectify.ai/mafin) is a state-of-the-art reasoning-based RAG model designed specifically for financial document analysis. Powered by **PageIndex**, it achieved a market-leading [**98.7% accuracy**](https://vectify.ai/blog/Mafin2.5) on the [FinanceBench](https://arxiv.org/abs/2311.11944) benchmark — significantly outperforming traditional vector-based RAG systems.
+[Mafin 2.5](https://vectify.ai/mafin) is a reasoing-based RAG system for financial document analysis, powered by **PageIndex**. It achieved a state-of-the-art [**98.7% accuracy**](https://vectify.ai/blog/Mafin2.5) on the [FinanceBench](https://arxiv.org/abs/2311.11944) benchmark — significantly outperforming traditional vector-based RAG systems.
 
 PageIndex's hierarchical indexing enabled precise navigation and extraction of relevant content from complex financial reports, such as SEC filings and earnings disclosures.
 
-👉 See the full [benchmark results](https://github.com/VectifyAI/Mafin2.5-FinanceBench) and our [blog post](https://vectify.ai/blog/Mafin2.5) for detailed comparisons and performance metrics.
+👉 Explore the full [benchmark results](https://github.com/VectifyAI/Mafin2.5-FinanceBench) and our [blog post](https://vectify.ai/blog/Mafin2.5) for detailed comparisons and performance metrics.
 
 <div align="center">
   <a href="https://github.com/VectifyAI/Mafin2.5-FinanceBench">
