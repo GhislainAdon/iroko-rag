@@ -29,7 +29,7 @@
 
 #### 🚨 New Releases:
 - 📖 [**PageIndex Chat**](https://chat.pageindex.ai): The first human-like document analyst agent, designed for professional long documents.
-- 🔌 [**PageIndex MCP**](https://pageindex.ai/mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agent. Chat with long PDFs the reasoning-based, human-like way.
+- 🔌 [**PageIndex MCP**](https://pageindex.ai/mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agent. Chat with long PDFs in a reasoning-based, human-like way.
 
 #### 📢 Recent Updates
 
@@ -38,8 +38,8 @@
 * ["Do We Still Need OCR?"](https://pageindex.ai/blog/do-we-need-ocr): Explores how vision-based, reasoning-native RAG challenges the traditional OCR pipeline, and why the future of document AI might be *vectorless* and *vision-based*.
 
 **🧪 Cookbooks:**
-* [**Vectorless RAG**](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb): A minimal, hands-on example of reasoning-based RAG using **PageIndex** — no vectors, no chunking, and human-like retrieval.
-* [Vision-based Vectorless RAG](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb): Experience OCR-free document understanding through PageIndex’s visual retrieval workflow — retrieving and reasoning directly over PDF page images.
+* [**Vectorless RAG notebook**](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb): A minimal, hands-on example of reasoning-based RAG using **PageIndex** — no vectors, no chunking, and human-like retrieval.
+* [Vision-based Vectorless RAG notebook](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb): Experience OCR-free document understanding through PageIndex’s visual retrieval workflow — retrieving and reasoning directly over PDF page images.
 
 
 # 📑 Introduction to PageIndex
@@ -58,12 +58,12 @@ Inspired by AlphaGo, we propose **[PageIndex](https://vectify.ai/pageindex)** �
 ### 🧩 Features 
 
 Compared to traditional *vector-based RAG*, **PageIndex** features:
-- **No Vectors Needed**: Uses document structure and LLM reasoning for retrieval.
+- **No Vector DB Needed**: Uses document structure and LLM reasoning for retrieval, instead of vector search.
 - **No Chunking Needed**: Documents are organized into natural sections, not artificial chunks.
 - **Human-like Retrieval**: Simulates how human experts navigate and extract knowledge from complex documents.
 - **Transparent Retrieval Process**: Retrieval based on reasoning — traceable and interpretable. Say goodbye to approximate vector search ("vibe retrieval").
 
-PageIndex powers a reasoning-based RAG system that achieved [98.7% accuracy](https://github.com/VectifyAI/Mafin2.5-FinanceBench) on FinanceBench, showing state-of-the-art performance in professional document analysis (see our [blog post](https://vectify.ai/blog/Mafin2.5) for details).
+PageIndex powers a reasoning-based RAG system that achieved [98.7% accuracy](https://github.com/VectifyAI/Mafin2.5-FinanceBench) on FinanceBench, demonstrating **state-of-the-art** performance in professional document analysis (see our [blog post](https://vectify.ai/blog/Mafin2.5) for details).
 
 ### ⚙️ Deployment Options
 - 🛠️ Self-host — run locally with this open-source repo.
@@ -73,7 +73,6 @@ PageIndex powers a reasoning-based RAG system that achieved [98.7% accuracy](htt
 
 - Try the [_**Vectorless RAG Notebook**_](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb) — a *minimal*, hands-on example of reasoning-based RAG using **PageIndex**.
 - Experiment with the [*Vision-based Vectorless RAG*](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb) — no OCR; a minimal, reasoning-native RAG pipeline that works directly over page images.
-<p align="center">
   
 <div align="center">
   <a href="https://colab.research.google.com/github/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb" target="_blank" rel="noopener">
@@ -92,7 +91,7 @@ PageIndex can transform lengthy PDF documents into a semantic **tree structure**
 
 Here is an example output. See more [example documents](https://github.com/VectifyAI/PageIndex/tree/main/tests/pdfs) and [generated trees](https://github.com/VectifyAI/PageIndex/tree/main/tests/results).
 
-```python
+```jsonc
 ...
 {
   "title": "Financial Stability",
@@ -167,7 +166,7 @@ You can customize the processing with additional optional arguments:
 <details>
 <summary><strong>Markdown support</strong></summary>
 <br>
-We also provide a markdown support for PageIndex. You can use the `-md` flag to generate a tree structure for a markdown file.
+We also provide a markdown support for PageIndex. You can use the `-md_path` flag to generate a tree structure for a markdown file.
 
 ```bash
 python3 run_pageindex.py --md_path /path/to/your/document.md
@@ -195,7 +194,7 @@ To address this, we introduced PageIndex OCR — the first long-context OCR mode
 
 # 📈 Case Study: SOTA on Finance QA Benchmark
 
-[Mafin 2.5](https://vectify.ai/mafin) is a reasoing-based RAG system for financial document analysis, powered by **PageIndex**. It achieved a state-of-the-art [**98.7% accuracy**](https://vectify.ai/blog/Mafin2.5) on the [FinanceBench](https://arxiv.org/abs/2311.11944) benchmark — significantly outperforming traditional vector-based RAG systems.
+[Mafin 2.5](https://vectify.ai/mafin) is a reasoning-based RAG system for financial document analysis, powered by **PageIndex**. It achieved a state-of-the-art [**98.7% accuracy**](https://vectify.ai/blog/Mafin2.5) on the [FinanceBench](https://arxiv.org/abs/2311.11944) benchmark — significantly outperforming traditional vector-based RAG systems.
 
 PageIndex's hierarchical indexing enabled precise navigation and extraction of relevant content from complex financial reports, such as SEC filings and earnings disclosures.
 
@@ -222,7 +221,7 @@ PageIndex's hierarchical indexing enabled precise navigation and extraction of r
 Leave a star if you like our project. Thank you!  
 
 <p>
-  <img src="https://github.com/user-attachments/assets/eae4ff38-48ae-4a7c-b19f-eab81201d794" width="70%">
+  <img src="https://github.com/user-attachments/assets/eae4ff38-48ae-4a7c-b19f-eab81201d794" width="80%">
 </p>
 
 ### Connect with Us
