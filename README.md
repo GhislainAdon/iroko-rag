@@ -27,20 +27,21 @@
 
 ---
 
-### 📢 Recent Updates
+<details open>
+<summary><h3>📢 Recent Updates</h3></summary>
 
-**🚀 New Releases:**
+ **🚀 New Releases:**
 - 🔥 [**PageIndex Chat**](https://chat.pageindex.ai): The first human-like document analyst agent, designed for professional long documents.
 - [**PageIndex MCP**](https://pageindex.ai/mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agent. Chat with long PDFs in a reasoning-based, human-like way.
 
-**🧪 Cookbooks:**
+ **🧪 Cookbooks:**
 * [**Vectorless RAG notebook**](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb): A minimal, hands-on example of reasoning-based RAG using **PageIndex** — no vectors, no chunking, and human-like retrieval.
 * [Vision-based Vectorless RAG notebook](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb): Experience OCR-free document understanding through PageIndex’s visual retrieval workflow that retrieves and reasons directly over PDF page images.
  
-**📜 Articles:**
+ **📜 Articles:**
 * ⭐ [**The PageIndex Overview**](https://pageindex.ai/blog/pageindex-intro): Introduces the PageIndex framework — an *agentic, in-context* **tree index** that enables LLMs to perform **reasoning-based, human-like retrieval** over long documents, without vector DB or chunking.
 * [Do We Still Need OCR?](https://pageindex.ai/blog/do-we-need-ocr): Explores how vision-based, reasoning-native RAG challenges the traditional OCR pipeline, and why the future of document AI might be *vectorless* and *vision-based*.
-
+</details>
 
 
 # 📑 Introduction to PageIndex
