@@ -11,14 +11,13 @@
   <a href="https://trendshift.io/repositories/14736" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14736" alt="VectifyAI%2FPageIndex | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </p>
 
-<p align="center">Reasoning-based RAG&nbsp; ◦ &nbsp;No Vector DB&nbsp; ◦ &nbsp;No Chunking&nbsp; ◦ &nbsp;Human-like Retrieval</p>
+<p align="center">No Chunking&nbsp; ◦ &nbsp;No Top-K&nbsp; ◦ &nbsp;No Vector DB&nbsp; ◦ &nbsp;Like a Human</p>
 
 <h4 align="center">
   <a href="https://vectify.ai">🏠 Homepage</a>&nbsp; • &nbsp;
-  <a href="https://chat.pageindex.ai">🚀 Agent</a>&nbsp; • &nbsp;
+  <a href="https://chat.pageindex.ai">🖥️ Platform</a>&nbsp; • &nbsp;
   <a href="https://pageindex.ai/mcp">🔌 MCP</a>&nbsp; • &nbsp;
-  <a href="https://dash.pageindex.ai">🖥️ Dashboard</a>&nbsp; • &nbsp;
-  <a href="https://docs.pageindex.ai/quickstart">📚 Docs</a>&nbsp; • &nbsp;
+  <a href="https://docs.pageindex.ai/quickstart">📚 API</a>&nbsp; • &nbsp;
   <a href="https://discord.com/invite/VuXuf29EUj">💬 Discord</a>&nbsp; • &nbsp;
   <a href="https://ii2abc2jejf.typeform.com/to/tK3AXl8T">✉️ Contact</a>&nbsp;
 </h4>
@@ -32,7 +31,7 @@
 
  **🚀 New Releases:**
 - [🔥 **PageIndex Chat Platform**](https://chat.pageindex.ai): The first human-like document analyst agent platform, designed for professional long documents.
-- [**PageIndex Chat API**](https://chat.pageindex.ai): An API that brings PageIndex’s advanced long-document intelligence directly into your applications and workflows.
+- [**PageIndex Chat API**](https://docs.pageindex.ai/quickstart): An API that brings PageIndex’s advanced long-document intelligence directly into your applications and workflows.
 - [**PageIndex MCP**](https://pageindex.ai/mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agent. Chat with long PDFs in a reasoning-based, human-like way.
 
  **🧪 Cookbooks:**
