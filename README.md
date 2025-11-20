@@ -11,7 +11,7 @@
   <a href="https://trendshift.io/repositories/14736" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14736" alt="VectifyAI%2FPageIndex | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </p>
 
-<p align="center">No Chunking&nbsp; ◦ &nbsp;No Top-K&nbsp; ◦ &nbsp;No Vector DB&nbsp; ◦ &nbsp;Like a Human</p>
+<p align="center"><b>Reasoning-based RAG&nbsp; ◦ &nbsp;No Vector DB&nbsp; ◦ &nbsp;No Chunking&nbsp; ◦ &nbsp;Human-like Retrieval</b></p>
 
 <h4 align="center">
   <a href="https://vectify.ai">🏠 Homepage</a>&nbsp; • &nbsp;
@@ -207,6 +207,15 @@ PageIndex's hierarchical indexing enabled precise navigation and extraction of r
     <img src="https://github.com/user-attachments/assets/571aa074-d803-43c7-80c4-a04254b782a3" width="70%">
   </a>
 </div>
+
+---
+
+# 🧭 Resources
+
+* 📖 [Tutorials](https://docs.pageindex.ai/doc-search): practical guides and strategies, including *Document Search* and *Tree Search*.
+* 🧪 [Cookbooks](https://docs.pageindex.ai/cookbook/vectorless-rag-pageindex): hands-on, runnable examples and advanced use cases.
+* 📝 [Blog](https://pageindex.ai/blog): technical articles, research insights, and product updates
+* ⚙️ [MCP setup](https://pageindex.ai/mcp#quick-setup) & [API docs](https://docs.pageindex.ai/quickstart): integration details and configuration options.
 
 ---
 
