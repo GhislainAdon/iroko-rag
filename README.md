@@ -15,9 +15,9 @@
 
 <h4 align="center">
   <a href="https://vectify.ai">🏠 Homepage</a>&nbsp; • &nbsp;
-  <a href="https://chat.pageindex.ai">🖥️ Platform</a>&nbsp; • &nbsp;
+  <a href="https://chat.pageindex.ai">🖥️ Chat Platform</a>&nbsp; • &nbsp;
   <a href="https://pageindex.ai/mcp">🔌 MCP</a>&nbsp; • &nbsp;
-  <a href="https://docs.pageindex.ai/quickstart">📚 API</a>&nbsp; • &nbsp;
+  <a href="https://docs.pageindex.ai/quickstart">📚 API Docs</a>&nbsp; • &nbsp;
   <a href="https://discord.com/invite/VuXuf29EUj">💬 Discord</a>&nbsp; • &nbsp;
   <a href="https://ii2abc2jejf.typeform.com/to/tK3AXl8T">✉️ Contact</a>&nbsp;
 </h4>
@@ -29,21 +29,19 @@
 <details open>
 <summary><h2>📢 Recent Updates</h2></summary>
 
- **🚀 New Releases:**
-- [🔥 **PageIndex Chat**](https://chat.pageindex.ai): 
-The first human-like document-analysis agent platform built for professional long documents — also available via the [API](https://docs.pageindex.ai/quickstart) (beta).
+ **🔥 New Releases:**
+- [**PageIndex Chat**](https://chat.pageindex.ai): The first human-like document-analysis agent platform built for professional long documents. Could also be integrated via the [MCP](https://pageindex.ai/mcp) or [API](https://docs.pageindex.ai/quickstart) (beta).
 <!-- - [**PageIndex Chat API**](https://docs.pageindex.ai/quickstart): An API that brings PageIndex’s advanced long-document intelligence directly into your applications and workflows. -->
-- [**PageIndex MCP**](https://pageindex.ai/mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agent. Chat with long PDFs in a reasoning-based, human-like way.
+<!-- - [PageIndex MCP](https://pageindex.ai/mcp): Bring PageIndex into Claude, Cursor, or any MCP-enabled agent. Chat with long PDFs in a reasoning-based, human-like way. -->
+ 
+ **✍️ Articles:**
+- [**PageIndex Framework**](https://pageindex.ai/blog/pageindex-intro): Introduces the PageIndex framework — an *agentic, in-context* *tree index* that enables LLMs to perform *reasoning-based*, *human-like retrieval* over long documents, without vector DB or chunking.
+<!-- - [Do We Still Need OCR?](https://pageindex.ai/blog/do-we-need-ocr): Explores how vision-based, reasoning-native RAG challenges the traditional OCR pipeline, and why the future of document AI might be *vectorless* and *vision-based*. -->
 
  **🧪 Cookbooks:**
-* [**Vectorless RAG notebook**](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb): A minimal, hands-on example of reasoning-based RAG using **PageIndex** — no vectors, no chunking, and human-like retrieval.
-* [Vision-based Vectorless RAG notebook](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb): Experience OCR-free document understanding through PageIndex’s visual retrieval workflow that retrieves and reasons directly over PDF page images.
- 
- **📜 Articles:**
-* ⭐ [**The PageIndex Overview**](https://pageindex.ai/blog/pageindex-intro): Introduces the PageIndex framework — an *agentic, in-context* **tree index** that enables LLMs to perform **reasoning-based, human-like retrieval** over long documents, without vector DB or chunking.
-* [Do We Still Need OCR?](https://pageindex.ai/blog/do-we-need-ocr): Explores how vision-based, reasoning-native RAG challenges the traditional OCR pipeline, and why the future of document AI might be *vectorless* and *vision-based*.
+- [Vectorless RAG](https://docs.pageindex.ai/cookbook/vectorless-rag-pageindex): A minimal, hands-on example of reasoning-based RAG using **PageIndex** — no vectors, no chunking, and human-like retrieval.
+- [Vision-based Vectorless RAG](https://docs.pageindex.ai/cookbook/vision-rag-pageindex): Experience OCR-free document understanding through PageIndex’s visual retrieval workflow that retrieves and reasons directly over PDF page images.
 </details>
-
 
 # 📑 Introduction to PageIndex
 
@@ -64,13 +62,17 @@ Compared to traditional *vector-based RAG*, **PageIndex** features:
 - **No Vector DB**: Uses document structure and LLM reasoning for retrieval, instead of vector search.
 - **No Chunking**: Documents are organized into natural sections, not artificial chunks.
 - **Human-like Retrieval**: Simulates how human experts navigate and extract knowledge from complex documents.
-- **Transparent Retrieval Process**: Retrieval based on reasoning — traceable and interpretable. Say goodbye to approximate vector search ("vibe retrieval").
+- **Better Explainability and Traceability**: Retrieval is based on reasoning — traceable and interpretable, with page and section references. No more opaque, approximate vector search ("vibe retrieval").
 
 PageIndex powers a reasoning-based RAG system that achieved [98.7% accuracy](https://github.com/VectifyAI/Mafin2.5-FinanceBench) on FinanceBench, demonstrating **state-of-the-art** performance in professional document analysis (see our [blog post](https://vectify.ai/blog/Mafin2.5) for details).
 
+### 📍 Explore PageIndex
+
+Please see a detailed introduction of the [PageIndex framework](https://pageindex.ai/blog/pageindex-intro). Check out this GitHub repo for open-source implementations, and our [cookbook](https://docs.pageindex.ai/cookbook) and [tutorials](https://docs.pageindex.ai/tutorials) for more examples. The PageIndex service is available as a ChatGPT-style [chat platform](https://chat.pageindex.ai), or could be integrated via [MCP](https://pageindex.ai/mcp) or [API](https://docs.pageindex.ai/quickstart).
+
 ### ⚙️ Deployment Options
 - 🛠️ Self-host — run locally with this open-source repo.
-- ☁️ **Cloud Service** — try instantly with our  🖥️ [Platform](https://chat.pageindex.ai/), 🔌 [MCP](https://pageindex.ai/mcp) or 📚 [API](https://docs.pageindex.ai/quickstart).
+- ☁️ **Cloud Service** — try instantly with our 🖥️ [Chat Platform](https://chat.pageindex.ai/), 🔌 [MCP](https://pageindex.ai/mcp) or 📚 [API](https://docs.pageindex.ai/quickstart).
 
 ### 🧪 Quick Hands-on
 
