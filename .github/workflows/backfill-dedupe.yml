@@ -41,12 +41,12 @@ jobs:
           ISSUES=""
           PAGE=1
           while true; do
+            RAW_COUNT=$(gh issue list --repo "$REPO" --state open --limit 100 --page "$PAGE" --json number | jq 'length')
             BATCH=$(gh issue list --repo "$REPO" --state open --limit 100 --page "$PAGE" --json number,labels,createdAt \
               --jq "[.[] | select(.createdAt >= \"$SINCE\") | select([.labels[].name] | index(\"duplicate\") | not)] | .[].number")
 
-            [ -z "$BATCH" ] && break
-            ISSUES="$ISSUES $BATCH"
-            [ $(echo "$BATCH" | wc -w) -lt 100 ] && break
+            [ -n "$BATCH" ] && ISSUES="$ISSUES $BATCH"
+            [ "$RAW_COUNT" -lt 100 ] && break
             PAGE=$((PAGE + 1))
           done
           ISSUES=$(echo "$ISSUES" | xargs)
