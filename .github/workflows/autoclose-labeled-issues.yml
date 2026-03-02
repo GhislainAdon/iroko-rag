@@ -1,0 +1,45 @@
+# Closes open issues that carry the "autoclose" label and have been inactive
+# for more than INACTIVITY_DAYS days.  Runs on a daily schedule and can also
+# be triggered manually.
+name: Auto-close Inactive Labeled Issues
+
+on:
+  schedule:
+    # Runs every day at 01:00 UTC
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      inactivity_days:
+        description: 'Days of inactivity before closing (default: 7)'
+        required: false
+        default: '7'
+        type: number
+      dry_run:
+        description: 'Dry run – report but do not actually close issues'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  autoclose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Close inactive autoclose-labeled issues
+        env:
+          GITHUB_TOKEN:     ${{ secrets.GITHUB_TOKEN }}
+          REPO_OWNER:       ${{ github.repository_owner }}
+          REPO_NAME:        ${{ github.event.repository.name }}
+          # workflow_dispatch overrides the default; schedule uses the default (7)
+          INACTIVITY_DAYS:  ${{ inputs.inactivity_days || '7' }}
+          DRY_RUN:          ${{ inputs.dry_run || 'false' }}
+        run: node scripts/autoclose-labeled-issues.js

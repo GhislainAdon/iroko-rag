@@ -1,0 +1,235 @@
+# Detects duplicate issues using Claude Code.
+# Triggered automatically when a new issue is opened, or manually for a single issue.
+name: Issue Duplicate Detection
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to check for duplicates'
+        required: true
+        type: number
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  detect-duplicate:
+    runs-on: ubuntu-latest
+    # Skip pull-requests that surface as issues and bot-opened issues
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.issue.pull_request == null &&
+       !endsWith(github.actor, '[bot]') &&
+       github.actor != 'github-actions')
+    steps:
+      # ── 1. Ensure required labels exist ─────────────────────────────────────
+      - name: Ensure labels exist
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = [
+              { name: 'duplicate',  color: 'cfd3d7', description: 'This issue or pull request already exists' },
+              { name: 'autoclose',  color: 'e4e669', description: 'Will be auto-closed after a period of inactivity' },
+            ];
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo:  context.repo.repo,
+                  name:  label.name,
+                });
+              } catch (err) {
+                if (err.status === 404) {
+                  await github.rest.issues.createLabel({
+                    owner:       context.repo.owner,
+                    repo:        context.repo.repo,
+                    name:        label.name,
+                    color:       label.color,
+                    description: label.description,
+                  });
+                  core.info(`Created label: ${label.name}`);
+                }
+              }
+            }
+
+      # ── 2. Gather issue data and find candidate duplicates ──────────────────
+      - name: Gather issue data and candidates
+        id: data
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber =
+              context.eventName === 'issues'
+                ? context.payload.issue.number
+                : parseInt(core.getInput('issue_number') || '${{ inputs.issue_number }}');
+
+            const { data: issue } = await github.rest.issues.get({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: issueNumber,
+            });
+
+            // Skip already-closed or already-labelled issues
+            if (issue.state === 'closed') {
+              core.setOutput('skip', 'true');
+              core.info('Issue is already closed – skipping.');
+              return;
+            }
+            if (issue.labels.some(l => l.name === 'duplicate')) {
+              core.setOutput('skip', 'true');
+              core.info('Issue already has "duplicate" label – skipping.');
+              return;
+            }
+
+            // Extract meaningful keywords from the title
+            const stopWords = new Set([
+              'a','an','the','is','in','on','at','to','for','of','and','or','but','not',
+              'with','this','that','it','be','are','was','has','have','does','do','how',
+              'why','when','where','what','which','who','will','can','could','should',
+              'would','may','might','must','get','got','use','using','used','error',
+              'issue','bug','feature','request','problem','question','please','just',
+              'after','before','during','about','from','into','also','then','than',
+            ]);
+            const keywords = issue.title
+              .toLowerCase()
+              .replace(/[^a-z0-9\s]/g, ' ')
+              .split(/\s+/)
+              .filter(w => w.length > 2 && !stopWords.has(w))
+              .slice(0, 6)
+              .join(' ');
+
+            let candidates = [];
+            if (keywords) {
+              try {
+                const q = `repo:${context.repo.owner}/${context.repo.repo} is:issue state:open ${keywords}`;
+                const { data: results } = await github.rest.search.issuesAndPullRequests({
+                  q,
+                  per_page: 15,
+                });
+                candidates = results.items
+                  .filter(item => item.number !== issueNumber && !item.pull_request)
+                  .slice(0, 10);
+              } catch (err) {
+                core.warning('GitHub search failed: ' + err.message);
+              }
+            }
+
+            if (candidates.length === 0) {
+              core.setOutput('skip', 'true');
+              core.info('No candidate issues found – skipping Claude analysis.');
+              return;
+            }
+
+            core.setOutput('skip',         'false');
+            core.setOutput('issue_number', String(issueNumber));
+            core.setOutput('issue_title',  issue.title);
+            core.setOutput('issue_body',   (issue.body || '').substring(0, 3000));
+            core.setOutput('candidates',
+              JSON.stringify(candidates.map(c => ({
+                number: c.number,
+                title:  c.title,
+                url:    c.html_url,
+                body:   (c.body || '').substring(0, 500),
+              })))
+            );
+
+      # ── 3. Write data files (avoids YAML-injection of arbitrary text) ───────
+      - name: Write issue data to files
+        if: steps.data.outputs.skip == 'false'
+        env:
+          ISSUE_TITLE:  ${{ steps.data.outputs.issue_title }}
+          ISSUE_BODY:   ${{ steps.data.outputs.issue_body }}
+          CANDIDATES:   ${{ steps.data.outputs.candidates }}
+        run: |
+          printf '%s' "$ISSUE_TITLE" > /tmp/issue-title.txt
+          printf '%s' "$ISSUE_BODY"  > /tmp/issue-body.txt
+          printf '%s' "$CANDIDATES"  > /tmp/issue-candidates.json
+
+      # ── 4. Ask Claude to decide whether this is a duplicate ─────────────────
+      - name: Run Claude duplicate analysis
+        if: steps.data.outputs.skip == 'false'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.AUTHROPIC_API_KEY }}
+          github_token:      ${{ secrets.GITHUB_TOKEN }}
+          track_progress:    'false'
+          prompt: |
+            You are a GitHub issue triage assistant.
+
+            Analyze whether issue #${{ steps.data.outputs.issue_number }} in this repository
+            is a duplicate of any existing open issues.
+
+            The issue data is stored in temporary files on this runner:
+            - /tmp/issue-title.txt  — title of the new issue
+            - /tmp/issue-body.txt   — body of the new issue
+            - /tmp/issue-candidates.json — JSON array of up to 10 candidate issues
+              (each has: number, title, url, body)
+
+            Read those files first, then follow these rules:
+
+            1. Compare the new issue against every candidate.
+               Focus on whether they describe the *same underlying problem or request*.
+            2. Only flag as a duplicate if you are at least 85 % confident.
+               Superficial wording differences do NOT make an issue non-duplicate.
+            3. IF the new issue IS a duplicate:
+               a. Post a friendly, helpful comment on issue #${{ steps.data.outputs.issue_number }}.
+                  The comment must:
+                  - Thank the reporter
+                  - Explain which existing issue(s) it duplicates and why (include markdown links)
+                  - Invite them to subscribe to the original for updates
+               b. The LAST line of the comment must be exactly (fill in real numbers):
+                  <!-- DEDUPE_RESULT: {"is_duplicate":true,"issues":[ISSUE_NUMBERS]} -->
+                  Example: <!-- DEDUPE_RESULT: {"is_duplicate":true,"issues":[42,73]} -->
+            4. IF the issue is NOT a duplicate, or you are unsure:
+               - Do NOT post any comment.
+               - Do NOT take any other action.
+
+      # ── 5. Parse Claude's comment and apply labels ──────────────────────────
+      - name: Apply labels if duplicate found
+        if: steps.data.outputs.skip == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = parseInt('${{ steps.data.outputs.issue_number }}');
+
+            // Allow a moment for the comment to land
+            await new Promise(r => setTimeout(r, 5000));
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: issueNumber,
+              per_page:     50,
+            });
+
+            const pattern = /<!--\s*DEDUPE_RESULT:\s*(\{[^}]+\})\s*-->/;
+            let isDuplicate = false;
+
+            for (const comment of [...comments].reverse()) {
+              const m = comment.body.match(pattern);
+              if (m) {
+                try {
+                  const result = JSON.parse(m[1]);
+                  isDuplicate = result.is_duplicate === true;
+                } catch (err) {
+                  core.warning('Failed to parse DEDUPE_RESULT JSON: ' + err.message);
+                }
+                break;
+              }
+            }
+
+            if (isDuplicate) {
+              await github.rest.issues.addLabels({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: issueNumber,
+                labels:       ['duplicate', 'autoclose'],
+              });
+              core.info(`✅ Applied "duplicate" and "autoclose" labels to #${issueNumber}`);
+            } else {
+              core.info(`ℹ️  Issue #${issueNumber} is not a duplicate – no labels applied.`);
+            }

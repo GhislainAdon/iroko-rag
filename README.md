@@ -267,4 +267,69 @@ Leave us a star 🌟 if you like our project. Thank you!
 
 ---
 
+## 🤖 GitHub Automation
+
+This repository uses automated GitHub Actions workflows to keep the issue tracker tidy.
+
+### Overview
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `issue-dedupe.yml` | Issue opened · `workflow_dispatch` | Detects duplicate issues using Claude and labels them |
+| `backfill-dedupe.yml` | `workflow_dispatch` | Runs duplicate detection over historical issues |
+| `autoclose-labeled-issues.yml` | Daily schedule · `workflow_dispatch` | Closes issues labelled `autoclose` after N days of inactivity |
+| `remove-autoclose-label.yml` | Issue comment created | Removes the `autoclose` label when a human posts a new comment |
+
+### Required Secrets
+
+Add the following secret to the repository (**Settings → Secrets and variables → Actions**):
+
+| Secret | Description |
+|---|---|
+| `AUTHROPIC_API_KEY` | Your Anthropic API key (used by `anthropics/claude-code-action`) |
+
+`GITHUB_TOKEN` is provided automatically by GitHub Actions and does not need to be added manually.
+
+### Labels
+
+The workflows create the following labels automatically if they do not exist:
+
+| Label | Description |
+|---|---|
+| `duplicate` | Marks issues identified as duplicates |
+| `autoclose` | Marks issues that will be automatically closed after inactivity |
+
+### Running the Backfill
+
+To scan historical issues for duplicates, trigger the **Backfill Duplicate Detection** workflow manually from the **Actions** tab:
+
+- **`days_back`** (default `30`) — how many days into the past to scan
+- **`dry_run`** (default `false`) — set to `true` to preview results without modifying issues
+
+```
+Actions → Backfill Duplicate Detection → Run workflow
+```
+
+### Changing the Inactivity Threshold
+
+The default inactivity period before an `autoclose`-labelled issue is closed is **7 days**.
+
+To change it for a one-off run, trigger **Auto-close Inactive Labeled Issues** with the `inactivity_days` input.
+
+To change the default permanently, edit the `INACTIVITY_DAYS` env variable default in `.github/workflows/autoclose-labeled-issues.yml`:
+
+```yaml
+INACTIVITY_DAYS: ${{ inputs.inactivity_days || '7' }}  # ← change '7' here
+```
+
+### How Duplicate Detection Works
+
+1. When a new issue is opened, keywords from the title are used to search for the top 10 most relevant existing open issues via the GitHub Search API.
+2. The issue title, body, and candidate list are passed to **Claude** (`anthropics/claude-code-action`) with a structured prompt.
+3. Claude posts a comment on the issue (if it is highly confident it is a duplicate), including links to the original issue(s) and a brief explanation.
+4. A follow-up step reads the comment, extracts the machine-readable result, and applies the `duplicate` and `autoclose` labels.
+5. If Claude is not confident, no comment or labels are applied.
+
+---
+
 © 2025 [Vectify AI](https://vectify.ai)
