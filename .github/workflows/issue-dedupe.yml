@@ -53,5 +53,5 @@ jobs:
           prompt: "/dedupe ${{ github.repository }}/issues/${{ steps.issue.outputs.number }}"
           anthropic_api_key: ${{ secrets.AUTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          claude_args: "--model claude-sonnet-4-5-20250929"
           allowed_bots: "github-actions"
+          allowed_non_write_users: "*"
