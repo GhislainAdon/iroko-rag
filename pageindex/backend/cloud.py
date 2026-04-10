@@ -141,12 +141,13 @@ class CloudBackend:
 
         doc_id = resp["doc_id"]
 
-        # Poll until retrieval-ready
+        # Poll until indexing completes. The cloud API signals readiness via
+        # status == "completed"; retrieval_ready is not a reliable indicator.
         for _ in range(120):  # 10 min max
             tree_resp = self._request("GET", f"/doc/{self._enc(doc_id)}/", params={"type": "tree"})
-            if tree_resp.get("retrieval_ready"):
-                return doc_id
             status = tree_resp.get("status", "")
+            if status == "completed":
+                return doc_id
             if status == "failed":
                 raise CloudAPIError(f"Document {doc_id} indexing failed")
             time.sleep(5)
