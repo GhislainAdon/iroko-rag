@@ -685,10 +685,14 @@ def format_structure(structure, order=None):
 
 
 class ConfigLoader:
+    # Code-side defaults for non-tuning settings (kept out of config.yaml).
+    # yaml entries override these if present.
+    _CODE_DEFAULTS = {"pdf_parser": "PyPDF2"}
+
     def __init__(self, default_path: str = None):
         if default_path is None:
             default_path = Path(__file__).parent / "config.yaml"
-        self._default_dict = self._load_yaml(default_path)
+        self._default_dict = {**self._CODE_DEFAULTS, **self._load_yaml(default_path)}
 
     @staticmethod
     def _load_yaml(path):
