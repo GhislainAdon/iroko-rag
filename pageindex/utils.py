@@ -385,9 +385,10 @@ def add_preface_if_needed(data):
 
 
 SUPPORTED_PDF_PARSERS = ("PyPDF2", "pypdfium2", "PyMuPDF")
+DEFAULT_PDF_PARSER = SUPPORTED_PDF_PARSERS[0]
 
 
-def read_pdf_pages(doc, pdf_parser="PyPDF2"):
+def read_pdf_pages(doc, pdf_parser=DEFAULT_PDF_PARSER):
     """Return a list of per-page text strings using the selected parser.
 
     `doc` may be a file path (str/Path) or a BytesIO. `pdf_parser` is one of
@@ -438,7 +439,7 @@ def read_pdf_pages(doc, pdf_parser="PyPDF2"):
     )
 
 
-def get_page_tokens(pdf_path, model=None, pdf_parser="PyPDF2"):
+def get_page_tokens(pdf_path, model=None, pdf_parser=DEFAULT_PDF_PARSER):
     pages = read_pdf_pages(pdf_path, pdf_parser=pdf_parser)
     return [(text, litellm.token_counter(model=model, text=text)) for text in pages]
 

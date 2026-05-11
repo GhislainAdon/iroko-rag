@@ -8,7 +8,7 @@ from pathlib import Path
 from .page_index import page_index
 from .page_index_md import md_to_tree
 from .retrieve import get_document, get_document_structure, get_page_content
-from .utils import ConfigLoader, read_pdf_pages, remove_fields
+from .utils import ConfigLoader, DEFAULT_PDF_PARSER, read_pdf_pages, remove_fields
 
 META_INDEX = "_meta.json"
 
@@ -31,7 +31,7 @@ class PageIndexClient:
     For agent-based QA, see examples/agentic_vectorless_rag_demo.py.
     """
     def __init__(self, api_key: str = None, model: str = None, retrieve_model: str = None,
-                 workspace: str = None, pdf_parser: str = "PyPDF2"):
+                 workspace: str = None, pdf_parser: str = DEFAULT_PDF_PARSER):
         if api_key:
             os.environ["OPENAI_API_KEY"] = api_key
         elif not os.getenv("OPENAI_API_KEY") and os.getenv("CHATGPT_API_KEY"):

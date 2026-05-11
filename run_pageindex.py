@@ -3,7 +3,7 @@ import os
 import json
 from pageindex import *
 from pageindex.page_index_md import md_to_tree
-from pageindex.utils import ConfigLoader
+from pageindex.utils import ConfigLoader, DEFAULT_PDF_PARSER
 
 if __name__ == "__main__":
     # Set up argument parser
@@ -67,7 +67,7 @@ if __name__ == "__main__":
         opt = ConfigLoader().load({k: v for k, v in user_opt.items() if v is not None})
 
         # Process the PDF
-        toc_with_page_number = page_index_main(args.pdf_path, opt, pdf_parser=args.pdf_parser or "PyPDF2")
+        toc_with_page_number = page_index_main(args.pdf_path, opt, pdf_parser=args.pdf_parser or DEFAULT_PDF_PARSER)
         print('Parsing done, saving to file...')
         
         # Save results

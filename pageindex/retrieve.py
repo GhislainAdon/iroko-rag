@@ -1,9 +1,9 @@
 import json
 
 try:
-    from .utils import get_number_of_pages, read_pdf_pages, remove_fields
+    from .utils import DEFAULT_PDF_PARSER, get_number_of_pages, read_pdf_pages, remove_fields
 except ImportError:
-    from utils import get_number_of_pages, read_pdf_pages, remove_fields
+    from utils import DEFAULT_PDF_PARSER, get_number_of_pages, read_pdf_pages, remove_fields
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ def _get_pdf_page_content(doc_info: dict, page_nums: list[int]) -> list[dict]:
             {'page': p, 'content': page_map[p]}
             for p in page_nums if p in page_map
         ]
-    parser = doc_info.get('pdf_parser') or 'PyPDF2'
+    parser = doc_info.get('pdf_parser') or DEFAULT_PDF_PARSER
     all_pages = read_pdf_pages(doc_info['path'], pdf_parser=parser)
     total = len(all_pages)
     valid_pages = [p for p in page_nums if 1 <= p <= total]
