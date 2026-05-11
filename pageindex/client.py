@@ -1,9 +1,20 @@
 # pageindex/client.py
 from __future__ import annotations
 from pathlib import Path
+from typing import Any, Iterator
+
+from typing_extensions import deprecated
+
 from .collection import Collection
 from .config import IndexConfig
+from .errors import PageIndexAPIError
 from .parser.protocol import DocumentParser
+
+_LEGACY_SDK_MSG = (
+    "Legacy compatibility — new code should prefer the Collection-based API "
+    "(PageIndexClient.collection(...))."
+)
+_legacy_sdk = deprecated(_LEGACY_SDK_MSG, category=PendingDeprecationWarning)
 
 
 def _normalize_retrieve_model(model: str) -> str:
@@ -39,21 +50,34 @@ class PageIndexClient:
         # Or use LocalClient / CloudClient for explicit mode selection
     """
 
-    def __init__(self, api_key: str = None, model: str = None,
+    BASE_URL = "https://api.pageindex.ai"
+
+    def __init__(self, api_key: str | None = None, model: str = None,
                  retrieve_model: str = None, storage_path: str = None,
                  storage=None, index_config: IndexConfig | dict = None):
-        if api_key:
+        if api_key == "":
+            import logging
+            logging.getLogger(__name__).warning(
+                "PageIndexClient received an empty api_key; falling back to local mode. "
+                "Pass api_key=None to silence this warning, or provide a real key for cloud mode."
+            )
+            api_key = None
+        if api_key is not None:
             self._init_cloud(api_key)
         else:
             self._init_local(model, retrieve_model, storage_path, storage, index_config)
 
     def _init_cloud(self, api_key: str):
         from .backend.cloud import CloudBackend
+        from .cloud_api import LegacyCloudAPI
         self._backend = CloudBackend(api_key=api_key)
+        self._legacy_cloud_api = LegacyCloudAPI(api_key=api_key, base_url=self.BASE_URL)
 
     def _init_local(self, model: str = None, retrieve_model: str = None,
                     storage_path: str = None, storage=None,
                     index_config: IndexConfig | dict = None):
+        self._legacy_cloud_api = None
+
         # Build IndexConfig: merge model/retrieve_model with index_config
         overrides = {}
         if model:
@@ -122,6 +146,124 @@ class PageIndexClient:
             from .errors import PageIndexError
             raise PageIndexError("Custom parsers are not supported in cloud mode")
         self._backend.register_parser(parser)
+
+    def _require_cloud_api(self):
+        if self._legacy_cloud_api is None:
+            from .errors import PageIndexAPIError
+            raise PageIndexAPIError(
+                "This method is part of the pageindex 0.2.x cloud SDK API. "
+                "Initialize with api_key to use it."
+            )
+        return self._legacy_cloud_api
+
+    # ── pageindex 0.2.x cloud SDK compatibility (prefer Collection API for new code) ──
+    @_legacy_sdk
+    def submit_document(
+        self,
+        file_path: str,
+        mode: str | None = None,
+        beta_headers: list[str] | None = None,
+        folder_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Legacy SDK compatibility — prefer ``client.collection(...).add(path)``."""
+        return self._require_cloud_api().submit_document(
+            file_path=file_path,
+            mode=mode,
+            beta_headers=beta_headers,
+            folder_id=folder_id,
+        )
+
+    @_legacy_sdk
+    def get_ocr(self, doc_id: str, format: str = "page") -> dict[str, Any]:
+        """Legacy SDK compatibility — prefer ``collection.get_page_content(doc_id, pages)``."""
+        return self._require_cloud_api().get_ocr(doc_id=doc_id, format=format)
+
+    @_legacy_sdk
+    def get_tree(self, doc_id: str, node_summary: bool = False) -> dict[str, Any]:
+        """Legacy SDK compatibility — prefer ``collection.get_document_structure(doc_id)``."""
+        return self._require_cloud_api().get_tree(doc_id=doc_id, node_summary=node_summary)
+
+    @_legacy_sdk
+    def is_retrieval_ready(self, doc_id: str) -> bool:
+        """Legacy SDK compatibility — Collection API handles readiness internally."""
+        return self._require_cloud_api().is_retrieval_ready(doc_id=doc_id)
+
+    @_legacy_sdk
+    def submit_query(self, doc_id: str, query: str, thinking: bool = False) -> dict[str, Any]:
+        """Legacy SDK compatibility — prefer ``collection.query(question, doc_ids=[doc_id])``."""
+        return self._require_cloud_api().submit_query(
+            doc_id=doc_id,
+            query=query,
+            thinking=thinking,
+        )
+
+    @_legacy_sdk
+    def get_retrieval(self, retrieval_id: str) -> dict[str, Any]:
+        """Legacy SDK compatibility — Collection API returns answers synchronously."""
+        return self._require_cloud_api().get_retrieval(retrieval_id=retrieval_id)
+
+    @_legacy_sdk
+    def chat_completions(
+        self,
+        messages: list[dict[str, str]],
+        stream: bool = False,
+        doc_id: str | list[str] | None = None,
+        temperature: float | None = None,
+        stream_metadata: bool = False,
+        enable_citations: bool = False,
+    ) -> dict[str, Any] | Iterator[str] | Iterator[dict[str, Any]]:
+        """Legacy SDK compatibility — prefer ``collection.query(...)``."""
+        return self._require_cloud_api().chat_completions(
+            messages=messages,
+            stream=stream,
+            doc_id=doc_id,
+            temperature=temperature,
+            stream_metadata=stream_metadata,
+            enable_citations=enable_citations,
+        )
+
+    @_legacy_sdk
+    def get_document(self, doc_id: str) -> dict[str, Any]:
+        """Legacy SDK compatibility — prefer ``collection.get_document(doc_id)``."""
+        return self._require_cloud_api().get_document(doc_id=doc_id)
+
+    @_legacy_sdk
+    def delete_document(self, doc_id: str) -> dict[str, Any]:
+        """Legacy SDK compatibility — prefer ``collection.delete_document(doc_id)``."""
+        return self._require_cloud_api().delete_document(doc_id=doc_id)
+
+    @_legacy_sdk
+    def list_documents(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        folder_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Legacy SDK compatibility — prefer ``collection.list_documents()``."""
+        return self._require_cloud_api().list_documents(
+            limit=limit,
+            offset=offset,
+            folder_id=folder_id,
+        )
+
+    @_legacy_sdk
+    def create_folder(
+        self,
+        name: str,
+        description: str | None = None,
+        parent_folder_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Legacy SDK compatibility — prefer ``client.collection(name)`` (auto-creates)."""
+        return self._require_cloud_api().create_folder(
+            name=name,
+            description=description,
+            parent_folder_id=parent_folder_id,
+        )
+
+    @_legacy_sdk
+    def list_folders(self, parent_folder_id: str | None = None) -> dict[str, Any]:
+        """Legacy SDK compatibility — prefer ``client.list_collections()``."""
+        return self._require_cloud_api().list_folders(parent_folder_id=parent_folder_id)
 
 
 class LocalClient(PageIndexClient):

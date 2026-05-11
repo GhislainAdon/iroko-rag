@@ -13,6 +13,7 @@ from .storage.protocol import StorageEngine
 from .events import QueryEvent
 from .errors import (
     PageIndexError,
+    PageIndexAPIError,
     CollectionNotFoundError,
     DocumentNotFoundError,
     IndexingError,
@@ -32,6 +33,7 @@ __all__ = [
     "StorageEngine",
     "QueryEvent",
     "PageIndexError",
+    "PageIndexAPIError",
     "CollectionNotFoundError",
     "DocumentNotFoundError",
     "IndexingError",

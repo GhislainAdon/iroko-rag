@@ -18,7 +18,15 @@ class IndexingError(PageIndexError):
     pass
 
 
-class CloudAPIError(PageIndexError):
+class PageIndexAPIError(PageIndexError):
+    """PageIndex cloud API returned an error.
+
+    Kept for compatibility with the pageindex 0.2.x cloud SDK.
+    """
+    pass
+
+
+class CloudAPIError(PageIndexAPIError):
     """Cloud API returned error."""
     pass
 
