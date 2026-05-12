@@ -73,7 +73,6 @@ class PdfParser:
                     continue
 
                 image_bytes = block.get("image")
-                ext = block.get("ext", "png")
                 if not image_bytes:
                     continue
 
