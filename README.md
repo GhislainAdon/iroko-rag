@@ -139,6 +139,78 @@ You can generate the PageIndex tree structure with this open-source repo, or use
 
 ---
 
+# 🚀 SDK Usage
+
+A unified `PageIndexClient` powers both local self-hosted and cloud-managed modes. Mode is auto-detected by whether you pass an `api_key`.
+
+### Install
+
+```bash
+pip install pageindex
+```
+
+### Quick start
+
+```python
+from pageindex import PageIndexClient
+
+# Local mode — uses your LLM key (e.g. OPENAI_API_KEY in env).
+client = PageIndexClient(model="gpt-4o-2024-11-20")
+
+col = client.collection()
+doc_id = col.add("path/to/your.pdf")
+
+print(col.query("What is the main contribution?", doc_ids=[doc_id]))
+
+# Cloud mode — fully managed, no LLM key needed:
+# client = PageIndexClient(api_key="your-pageindex-api-key")
+```
+
+`col.query(...)` returns the answer string by default. Always pass `doc_ids` for reliable single-document QA — omitting it queries the entire collection, which is experimental (see below).
+
+### Streaming queries
+
+```python
+import asyncio
+
+async def main():
+    async for ev in col.query("Explain multi-head attention", stream=True):
+        if ev.type == "answer_delta":
+            print(ev.data, end="", flush=True)
+        elif ev.type == "tool_call":
+            print(f"\n[tool] {ev.data['name']}")
+
+asyncio.run(main())
+```
+
+`ev.type` is one of: `tool_call`, `tool_result`, `answer_delta`, `answer_done`.
+
+### Multi-document collections (experimental)
+
+Passing `doc_ids` scopes the query to a specific subset of documents — this is the recommended path:
+
+```python
+col.query("Compare these two papers", doc_ids=[doc1, doc2])
+```
+
+Omitting `doc_ids` queries the **entire collection** and lets the agent pick which docs to read. This is an **experimental** feature with a naive first implementation — we're actively working on better cross-document retrieval. A `UserWarning` is emitted; set `PAGEINDEX_EXPERIMENTAL_MULTIDOC=1` to silence it.
+
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `OPENAI_API_KEY` (or any LiteLLM `<PROVIDER>_API_KEY`) | LLM provider key — local mode |
+| `PAGEINDEX_API_KEY` | PageIndex cloud key — cloud mode |
+| `PAGEINDEX_EXPERIMENTAL_MULTIDOC` | Set to `1` to silence the warning when calling `col.query(...)` without `doc_ids` |
+
+### Runnable examples
+
+- [`examples/local_demo.py`](examples/local_demo.py) — local mode end-to-end (index a PDF + streaming QA)
+- [`examples/cloud_demo.py`](examples/cloud_demo.py) — cloud mode end-to-end
+- [`examples/agentic_vectorless_rag_demo.py`](examples/agentic_vectorless_rag_demo.py) — lower-level integration with the OpenAI Agents SDK
+
+---
+
 # ⚙️ Package Usage
 
 You can follow these steps to generate a PageIndex tree from a PDF document.

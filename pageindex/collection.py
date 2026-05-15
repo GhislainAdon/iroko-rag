@@ -1,8 +1,22 @@
 # pageindex/collection.py
 from __future__ import annotations
+import os
+import warnings
 from typing import AsyncIterator
 from .events import QueryEvent
 from .backend.protocol import Backend
+
+
+def _multidoc_acked() -> bool:
+    return os.getenv("PAGEINDEX_EXPERIMENTAL_MULTIDOC", "").lower() in ("1", "true", "yes")
+
+
+_MULTIDOC_WARNING = (
+    "Querying the entire collection (no doc_ids) is experimental — selection "
+    "accuracy depends on auto-generated doc descriptions. Pass doc_ids=[...] "
+    "for reliable results, or set PAGEINDEX_EXPERIMENTAL_MULTIDOC=1 to silence "
+    "this warning."
+)
 
 
 class QueryStream:
@@ -60,10 +74,23 @@ class Collection:
         - stream=True: returns async iterable of QueryEvent
 
         Usage:
-            answer = col.query("question")
-            async for event in col.query("question", stream=True):
+            answer = col.query("question", doc_ids=[doc_id])
+            async for event in col.query("question", doc_ids=[doc_id], stream=True):
                 ...
+
+        Passing doc_ids=None queries the entire collection — this is
+        experimental; emits a UserWarning unless PAGEINDEX_EXPERIMENTAL_MULTIDOC
+        is set.
         """
+        if doc_ids is None and not _multidoc_acked():
+            docs = self._backend.list_documents(self._name)
+            if not docs:
+                raise ValueError(
+                    f"Cannot query collection '{self._name}': it is empty. "
+                    "Add documents with col.add(...) first."
+                )
+            if len(docs) > 1:
+                warnings.warn(_MULTIDOC_WARNING, UserWarning, stacklevel=2)
         if stream:
             return QueryStream(self._backend, self._name, question, doc_ids)
         return self._backend.query(self._name, question, doc_ids)

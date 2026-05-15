@@ -216,7 +216,12 @@ class CloudBackend:
             params["folder_id"] = folder_id
         data = self._request("GET", "/docs/", params=params)
         return [
-            {"doc_id": d.get("id", ""), "doc_name": d.get("name", ""), "doc_type": "pdf"}
+            {
+                "doc_id": d.get("id", ""),
+                "doc_name": d.get("name", ""),
+                "doc_description": d.get("description", ""),
+                "doc_type": "pdf",
+            }
             for d in data.get("documents", [])
         ]
 

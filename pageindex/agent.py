@@ -1,14 +1,25 @@
 # pageindex/agent.py
 from __future__ import annotations
+import os
 from typing import AsyncIterator
 from .events import QueryEvent
 from .backend.protocol import AgentTools
 
+# Disable Agents SDK tracing upload by default — it posts to OpenAI's tracing
+# endpoint and can fail with SSL timeouts in restricted networks. Opt back in
+# with PAGEINDEX_AGENTS_TRACING=1.
+if os.getenv("PAGEINDEX_AGENTS_TRACING", "").lower() not in ("1", "true", "yes"):
+    try:
+        from agents import set_tracing_disabled
+        set_tracing_disabled(True)
+    except ImportError:
+        pass
 
-SYSTEM_PROMPT = """
+
+OPEN_SYSTEM_PROMPT = """
 You are PageIndex, a document QA assistant.
 TOOL USE:
-- Call list_documents() to see available documents.
+- Call list_documents() to see available documents; use doc_name and doc_description to pick which doc(s) are relevant.
 - Call get_document(doc_id) to confirm status and page/line count.
 - Call get_document_structure(doc_id) to identify relevant page ranges.
 - Call get_page_content(doc_id, pages="5-7") with tight ranges; never fetch the whole document.
@@ -18,6 +29,42 @@ IMAGES:
 - Place images near the relevant context in your answer.
 Answer based only on tool output. Be concise.
 """
+
+SCOPED_SYSTEM_PROMPT = """
+You are PageIndex, a document QA assistant.
+TOOL USE:
+- Call get_document(doc_id) to confirm status and page/line count.
+- Call get_document_structure(doc_id) to identify relevant page ranges.
+- Call get_page_content(doc_id, pages="5-7") with tight ranges; never fetch the whole document.
+- Before each tool call, output one short sentence explaining the reason.
+IMAGES:
+- Page content may contain image references like ![image](path). Always preserve these in your answer so the downstream UI can render them.
+- Place images near the relevant context in your answer.
+Answer based only on tool output. Be concise.
+"""
+
+
+def wrap_with_doc_context(docs: list[dict], question: str) -> str:
+    """Prepend a doc-context block to the user question for scoped queries."""
+    lines = []
+    for d in docs:
+        line = f"- {d['doc_id']}: {d.get('doc_name', '')}"
+        desc = d.get("doc_description") or ""
+        if desc:
+            line += f" — {desc}"
+        lines.append(line)
+    label = "document" if len(docs) == 1 else "documents"
+    return (
+        f"The user has specified the following {label}:\n"
+        + "\n".join(lines)
+        + f"\n\nUse the doc_id(s) above directly with get_document_structure() "
+        f"and get_page_content() — do not look for other documents.\n\n"
+        f"User question: {question}"
+    )
+
+
+# Backwards-compatible alias (open mode is the historical default).
+SYSTEM_PROMPT = OPEN_SYSTEM_PROMPT
 
 
 class QueryStream:
@@ -30,12 +77,13 @@ class QueryStream:
                 print(event.data, end="", flush=True)
     """
 
-    def __init__(self, tools: AgentTools, question: str, model: str = None):
+    def __init__(self, tools: AgentTools, question: str, model: str = None,
+                 instructions: str | None = None):
         from agents import Agent
         from agents.model_settings import ModelSettings
         self._agent = Agent(
             name="PageIndex",
-            instructions=SYSTEM_PROMPT,
+            instructions=instructions or OPEN_SYSTEM_PROMPT,
             tools=tools.function_tools,
             mcp_servers=tools.mcp_servers,
             model=model,
@@ -73,9 +121,11 @@ class QueryStream:
 
 
 class AgentRunner:
-    def __init__(self, tools: AgentTools, model: str = None):
+    def __init__(self, tools: AgentTools, model: str = None,
+                 instructions: str | None = None):
         self._tools = tools
         self._model = model
+        self._instructions = instructions or OPEN_SYSTEM_PROMPT
 
     def run(self, question: str) -> str:
         """Sync non-streaming query. Returns answer string."""
@@ -83,7 +133,7 @@ class AgentRunner:
         from agents.model_settings import ModelSettings
         agent = Agent(
             name="PageIndex",
-            instructions=SYSTEM_PROMPT,
+            instructions=self._instructions,
             tools=self._tools.function_tools,
             mcp_servers=self._tools.mcp_servers,
             model=self._model,

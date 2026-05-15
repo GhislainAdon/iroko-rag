@@ -197,49 +197,95 @@ class LocalBackend:
         self._storage.delete_document(collection, doc_id)
 
     def get_agent_tools(self, collection: str, doc_ids: list[str] | None = None) -> AgentTools:
+        """Build agent tools.
+
+        - doc_ids=None (open mode): includes ``list_documents``; agent picks docs itself.
+        - doc_ids=[...] (scoped mode): no ``list_documents``; the other tools
+          hard-enforce the whitelist and reject out-of-scope doc_ids.
+        """
         from agents import function_tool
         import json
         storage = self._storage
         col_name = collection
         backend = self
-        filter_ids = doc_ids
+        scope = set(doc_ids) if doc_ids else None
 
-        @function_tool
-        def list_documents() -> str:
-            """List all documents in the collection."""
-            docs = storage.list_documents(col_name)
-            if filter_ids:
-                docs = [d for d in docs if d["doc_id"] in filter_ids]
-            return json.dumps(docs)
+        def _reject(doc_id: str) -> str | None:
+            if scope is not None and doc_id not in scope:
+                return json.dumps({
+                    "error": f"doc_id '{doc_id}' is not in scope.",
+                    "allowed_doc_ids": sorted(scope),
+                })
+            return None
 
         @function_tool
         def get_document(doc_id: str) -> str:
             """Get document metadata."""
+            rejection = _reject(doc_id)
+            if rejection:
+                return rejection
             return json.dumps(storage.get_document(col_name, doc_id))
 
         @function_tool
         def get_document_structure(doc_id: str) -> str:
             """Get document tree structure (without text)."""
+            rejection = _reject(doc_id)
+            if rejection:
+                return rejection
             structure = storage.get_document_structure(col_name, doc_id)
             return json.dumps(remove_fields(structure, fields=["text"]), ensure_ascii=False)
 
         @function_tool
         def get_page_content(doc_id: str, pages: str) -> str:
             """Get page content. Use tight ranges: '5-7', '3,8', '12'."""
+            rejection = _reject(doc_id)
+            if rejection:
+                return rejection
             result = backend.get_page_content(col_name, doc_id, pages)
             return json.dumps(result, ensure_ascii=False)
 
-        return AgentTools(function_tools=[list_documents, get_document, get_document_structure, get_page_content])
+        tools = [get_document, get_document_structure, get_page_content]
+
+        if scope is None:
+            @function_tool
+            def list_documents() -> str:
+                """List all documents in the collection."""
+                return json.dumps(storage.list_documents(col_name))
+            tools.insert(0, list_documents)
+
+        return AgentTools(function_tools=tools)
+
+    def _scoped_docs(self, collection: str, doc_ids: list[str]) -> list[dict]:
+        """Fetch metadata for the docs in scope; raise if any are missing."""
+        by_id = {d["doc_id"]: d for d in self._storage.list_documents(collection)}
+        missing = [did for did in doc_ids if did not in by_id]
+        if missing:
+            raise DocumentNotFoundError(
+                f"doc_ids not found in collection '{collection}': {missing}"
+            )
+        return [by_id[did] for did in doc_ids]
 
     def query(self, collection: str, question: str, doc_ids: list[str] | None = None) -> str:
-        from ..agent import AgentRunner
+        from ..agent import AgentRunner, SCOPED_SYSTEM_PROMPT, wrap_with_doc_context
         tools = self.get_agent_tools(collection, doc_ids)
-        return AgentRunner(tools=tools, model=self._retrieve_model).run(question)
+        instructions = None
+        if doc_ids:
+            docs = self._scoped_docs(collection, doc_ids)
+            question = wrap_with_doc_context(docs, question)
+            instructions = SCOPED_SYSTEM_PROMPT
+        return AgentRunner(tools=tools, model=self._retrieve_model,
+                           instructions=instructions).run(question)
 
     async def query_stream(self, collection: str, question: str,
                            doc_ids: list[str] | None = None):
-        from ..agent import QueryStream
+        from ..agent import QueryStream, SCOPED_SYSTEM_PROMPT, wrap_with_doc_context
         tools = self.get_agent_tools(collection, doc_ids)
-        stream = QueryStream(tools=tools, question=question, model=self._retrieve_model)
+        instructions = None
+        if doc_ids:
+            docs = self._scoped_docs(collection, doc_ids)
+            question = wrap_with_doc_context(docs, question)
+            instructions = SCOPED_SYSTEM_PROMPT
+        stream = QueryStream(tools=tools, question=question,
+                             model=self._retrieve_model, instructions=instructions)
         async for event in stream:
             yield event
