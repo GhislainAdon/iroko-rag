@@ -640,7 +640,8 @@ def test_cat_all_is_limited_to_text_files():
             filesystem.open("dsid_md_file")
         with pytest.raises(PIFSCommandError, match="only supported for txt/text files"):
             executor.execute("cat dsid_json_file --all")
-        assert filesystem.open("dsid_json_file").text == '{"body":"json"}'
+        opened_json = filesystem.open("dsid_json_file")
+        assert opened_json.text == '{"body":"json"}'
         for command in (
             "head dsid_pdf_file",
             "tail dsid_pdf_file",

@@ -1,4 +1,5 @@
 from importlib import import_module
+from typing import TYPE_CHECKING
 
 from .commands import PIFSCommandExecutor
 from .core import PageIndexFileSystem
@@ -10,6 +11,16 @@ from .metadata_generation import (
     MetadataGenerator,
 )
 from .types import OpenResult, SearchResult
+
+if TYPE_CHECKING:
+    from .hybrid_projection import HybridProjectionSearchBackend
+    from .projection_indexing import SummaryProjectionIndexer
+    from .semantic_index import (
+        RebuildableSemanticIndex,
+        SemanticIndexRecord,
+        SemanticSearchResult,
+        SQLiteVecSemanticIndex,
+    )
 
 _LAZY_EXPORTS = {
     "HybridProjectionSearchBackend": (".hybrid_projection", "HybridProjectionSearchBackend"),
@@ -49,4 +60,4 @@ def __getattr__(name: str):
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(__all__))
+    return sorted(set(globals()) | set(__all__) | set(_LAZY_EXPORTS))

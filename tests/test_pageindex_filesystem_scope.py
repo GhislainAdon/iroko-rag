@@ -4,6 +4,36 @@ from types import SimpleNamespace
 import pytest
 
 
+def test_filesystem_lazy_exports_remain_public():
+    import pageindex.filesystem as filesystem
+    from pageindex.filesystem import (
+        HybridProjectionSearchBackend,
+        RebuildableSemanticIndex,
+        SemanticIndexRecord,
+        SemanticSearchResult,
+        SQLiteVecSemanticIndex,
+        SummaryProjectionIndexer,
+    )
+
+    for name in (
+        "HybridProjectionSearchBackend",
+        "RebuildableSemanticIndex",
+        "SemanticIndexRecord",
+        "SemanticSearchResult",
+        "SQLiteVecSemanticIndex",
+        "SummaryProjectionIndexer",
+    ):
+        assert name in filesystem.__all__
+        assert name in dir(filesystem)
+
+    assert HybridProjectionSearchBackend.__name__ == "HybridProjectionSearchBackend"
+    assert RebuildableSemanticIndex.__name__ == "RebuildableSemanticIndex"
+    assert SemanticIndexRecord.__name__ == "SemanticIndexRecord"
+    assert SemanticSearchResult.__name__ == "SemanticSearchResult"
+    assert SQLiteVecSemanticIndex.__name__ == "SQLiteVecSemanticIndex"
+    assert SummaryProjectionIndexer.__name__ == "SummaryProjectionIndexer"
+
+
 class SummaryBackend:
     def __init__(self, document_id):
         self.document_id = document_id

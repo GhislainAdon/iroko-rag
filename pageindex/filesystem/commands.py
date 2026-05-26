@@ -1050,7 +1050,6 @@ class PIFSCommandExecutor:
         row["folder_paths"] = folder_paths
         metadata = info.get("metadata") or {}
         raw_value = metadata.get(field)
-        value_text = "" if raw_value is None else str(raw_value)
         row.update(
             {
                 "field": field,
@@ -1652,7 +1651,7 @@ class PIFSCommandExecutor:
         storage_path = Path(row["storage_uri"])
         source_path = Path(row["source_path"])
         root = storage_path
-        for _part in source_path.parts:
+        for _ in range(len(source_path.parts)):
             root = root.parent
         return root
 
