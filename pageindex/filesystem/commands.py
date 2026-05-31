@@ -40,10 +40,6 @@ class PIFSCommandExecutor:
     BROWSE_PAGE_SIZE = 10
     MAX_TEXT_LINES = 100
     MAX_PAGE_SPAN = 5
-    MAX_STRUCTURE_NODES = 25
-    MAX_NODE_IDS = 10
-    MAX_NODE_TEXT_LINES = 100
-    MAX_NODE_TEXT_CHARS = 12_000
     MAX_STAT_FIELD_TARGETS = 20
     MAX_TREE_DEPTH = 4
     MAX_LS_RENDER_FILES = 25
@@ -85,9 +81,8 @@ class PIFSCommandExecutor:
             "- find --where: exact/canonical metadata DSL filtering using stat --schema fields only",
             "- find <folder> -maxdepth N -type f|d: bounded folder traversal for find",
             "- grep -R: recursive lexical/FTS search only; semantic vector prefilter is disabled",
-            "- cat <path|file_ref|document_id> --structure: cached PageIndex node list, paginated at 25 nodes",
+            "- cat <path|file_ref|document_id> --structure: cached PageIndex structure JSON without text fields",
             "- cat <path|file_ref|document_id> --page: cached PageIndex page reads, limited to 5 pages",
-            "- cat <path|file_ref|document_id> --node: cached PageIndex node reads, limited to 10 node ids",
             "- cat <path|file_ref|document_id> --all: text artifact reads for txt/text files, paginated at 100 lines",
             "- stat --field <metadata_field> <target...>: one metadata field across up to 20 documents",
         ]
@@ -495,15 +490,11 @@ class PIFSCommandExecutor:
         if target.startswith("-"):
             raise PIFSCommandError(
                 "cat syntax is target-first: cat <path|file_ref|document_id> --structure, "
-                "cat <path|file_ref|document_id> --page 31-59, or "
-                "cat <path|file_ref|document_id> --node 0009"
+                "or cat <path|file_ref|document_id> --page 31-59"
             )
         location = "all"
         structural_mode: str | None = None
-        node_ids: list[str] = []
         page_range: str | None = None
-        structure_offset = 0
-        structure_limit = self.MAX_STRUCTURE_NODES
         i = 1
         while i < len(args):
             arg = args[i]
@@ -516,29 +507,6 @@ class PIFSCommandExecutor:
                 location = "all"
             elif arg == "--structure":
                 structural_mode = "structure"
-            elif arg == "--offset":
-                i += 1
-                if i >= len(args):
-                    raise PIFSCommandError("cat --structure --offset requires a value")
-                structure_offset = self._parse_non_negative_int(args[i], "cat --structure --offset")
-            elif arg == "--limit":
-                i += 1
-                if i >= len(args):
-                    raise PIFSCommandError("cat --structure --limit requires a value")
-                structure_limit = self._parse_bounded_int(
-                    args[i],
-                    "cat --structure --limit",
-                    max_value=self.MAX_STRUCTURE_NODES,
-                )
-            elif arg == "--node":
-                i += 1
-                if i >= len(args):
-                    raise PIFSCommandError("cat --node requires a node id")
-                structural_mode = "node"
-                while i < len(args) and not args[i].startswith("-"):
-                    node_ids.extend(self._parse_node_ids(args[i]))
-                    i += 1
-                i -= 1
             elif arg == "--page":
                 i += 1
                 if i >= len(args):
@@ -551,8 +519,7 @@ class PIFSCommandExecutor:
                 raise PIFSCommandError(
                     "cat accepts one file target. Use target-first syntax: "
                     "cat <path|file_ref|document_id> --structure, "
-                    "cat <path|file_ref|document_id> --node 0002 0004, or "
-                    "cat <path|file_ref|document_id> --page 31-33. "
+                    "or cat <path|file_ref|document_id> --page 31-33. "
                     f"Unexpected extra argument: {arg!r}. If the target path or title contains "
                     "spaces, quote the whole target, for example: cat \"/documents/report name.pdf\" "
                     "--structure. If a title-derived path is ambiguous, use the file_ref or "
@@ -560,47 +527,7 @@ class PIFSCommandExecutor:
                 )
             i += 1
         if structural_mode == "structure":
-            if structure_limit < 1:
-                raise PIFSCommandError(
-                    "cat --structure --limit must be at least 1 and at most "
-                    f"{self.MAX_STRUCTURE_NODES}."
-                )
-            data = self.filesystem.pageindex_structure(
-                target,
-                offset=structure_offset,
-                limit=structure_limit,
-            )
-            self._attach_structure_next_command(data, target)
-            return data
-        if structural_mode == "node":
-            self._require_at_most(
-                len(node_ids),
-                "cat --node node count",
-                self.MAX_NODE_IDS,
-            )
-            if not node_ids:
-                raise PIFSCommandError("cat --node requires a node id")
-            node_results = [
-                self._bounded_node_result(
-                    self.filesystem.pageindex_node(target, node_id),
-                    target=target,
-                    node_id=node_id,
-                )
-                for node_id in node_ids
-            ]
-            if len(node_results) == 1:
-                return node_results[0]
-            return {
-                "mode": "nodes",
-                "target": target,
-                "available": all(result.get("available") is not False for result in node_results),
-                "node_ids": node_ids,
-                "nodes": node_results,
-                "text": "\n\n".join(
-                    f"[node {result.get('node_id') or node_id}]\n{result.get('text', '')}"
-                    for node_id, result in zip(node_ids, node_results)
-                ),
-            }
+            return self.filesystem.pageindex_structure(target)
         if structural_mode == "page":
             if not page_range or not re.fullmatch(r"\d+(?:-\d+)?", page_range):
                 raise PIFSCommandError(
@@ -752,66 +679,6 @@ class PIFSCommandExecutor:
         data["pagination"] = pagination
         return data
 
-    def _bounded_node_result(
-        self,
-        data: dict[str, Any],
-        *,
-        target: str,
-        node_id: str,
-    ) -> dict[str, Any]:
-        if not isinstance(data, dict) or data.get("available") is False:
-            return data
-        text = str(data.get("text") or "")
-        lines = text.splitlines()
-        truncated_by_lines = len(lines) > self.MAX_NODE_TEXT_LINES
-        truncated_by_chars = len(text) > self.MAX_NODE_TEXT_CHARS
-        if not truncated_by_lines and not truncated_by_chars:
-            data["node_pagination"] = {
-                "limit_nodes": self.MAX_NODE_IDS,
-                "text_truncated": False,
-            }
-            return data
-
-        selected = "\n".join(lines[: self.MAX_NODE_TEXT_LINES])
-        if len(selected) > self.MAX_NODE_TEXT_CHARS:
-            selected = selected[: self.MAX_NODE_TEXT_CHARS].rstrip()
-        data["text"] = (
-            selected.rstrip()
-            + "\n"
-            + self._pagination_footer(
-                "cat --node",
-                (
-                    f"node text limited to {self.MAX_NODE_TEXT_LINES} lines/"
-                    f"{self.MAX_NODE_TEXT_CHARS} chars"
-                ),
-                f"cat {shlex.quote(target)} --structure",
-            )
-        ).strip()
-        data["node_pagination"] = {
-            "limit_nodes": self.MAX_NODE_IDS,
-            "line_limit": self.MAX_NODE_TEXT_LINES,
-            "char_limit": self.MAX_NODE_TEXT_CHARS,
-            "original_lines": len(lines),
-            "original_chars": len(text),
-            "text_truncated": True,
-            "suggested_command": f"cat {shlex.quote(target)} --structure",
-            "node_id": node_id,
-        }
-        return data
-
-    def _attach_structure_next_command(self, data: dict[str, Any], target: str) -> None:
-        pagination = data.get("structure_pagination")
-        if not isinstance(pagination, dict):
-            return
-        if pagination.get("has_more") and pagination.get("next_offset") is not None:
-            next_command = (
-                f"cat {shlex.quote(target)} --structure "
-                f"--offset {pagination['next_offset']} --limit {pagination['limit']}"
-            )
-            pagination["next_command"] = next_command
-        else:
-            pagination["next_command"] = None
-
     def _attach_page_next_command(
         self,
         data: dict[str, Any],
@@ -840,10 +707,6 @@ class PIFSCommandExecutor:
             f"# output limited by {command}: {reason}. "
             f"Next: {next_command}. If unsure, use cat <target> --structure."
         )
-
-    @staticmethod
-    def _parse_node_ids(value: str) -> list[str]:
-        return [part.strip() for part in value.split(",") if part.strip()]
 
     @staticmethod
     def _reject_regex_alternation_query(query: str, command_name: str) -> None:
@@ -939,7 +802,6 @@ class PIFSCommandExecutor:
             return json.dumps(
                 {
                     "structure": data.get("structure", []),
-                    "pagination": data.get("structure_pagination", {}),
                 },
                 ensure_ascii=False,
                 indent=2,

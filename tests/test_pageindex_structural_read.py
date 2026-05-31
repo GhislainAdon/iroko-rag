@@ -68,7 +68,6 @@ def test_pageindex_structure_options_report_failed_register_build(monkeypatch):
         executor = PIFSCommandExecutor(filesystem, json_output=True)
 
         structure = json.loads(executor.execute("cat dsid_structural_missing --structure"))
-        node = json.loads(executor.execute("cat dsid_structural_missing --node 0001"))
         pages = json.loads(executor.execute("cat dsid_structural_missing --page 1-2"))
         stat = json.loads(executor.execute("stat dsid_structural_missing"))
 
@@ -84,10 +83,6 @@ def test_pageindex_structure_options_report_failed_register_build(monkeypatch):
             "error_type": "RuntimeError",
             "message": "index failed: extractor unavailable",
         }
-
-        assert node["data"]["mode"] == "node"
-        assert node["data"]["available"] is False
-        assert node["data"]["node_id"] == "0001"
 
         assert pages["data"]["mode"] == "page"
         assert pages["data"]["available"] is False
@@ -134,6 +129,9 @@ def test_register_pdf_markdown_uses_pageindex_extracted_text_for_metadata_and_ft
                         "text": "# Notes\n\nPageIndex Markdown extracted gamma text.",
                         "nodes": [],
                     }
+                ],
+                "pages": [
+                    {"page": 1, "content": "PageIndex Markdown extracted gamma text."}
                 ],
             }
         write_pageindex_client_doc(self.workspace, doc_id, doc)
@@ -348,10 +346,10 @@ def test_cat_structure_page_reuses_pageindex_client_cache_without_indexing(monke
         assert structure["data"]["available"] is True
         assert structure["data"]["pageindex_doc_id"] == "doc_cached_pdf"
         assert structure["data"]["structure"][0]["title"] == "Introduction"
-        assert structure["data"]["structure"][1]["title"] == "Findings"
-        assert structure["data"]["structure_pagination"]["limit"] == 25
+        assert structure["data"]["structure"][0]["nodes"][0]["title"] == "Findings"
+        assert "structure_pagination" not in structure["data"]
         assert "text" not in structure["data"]["structure"][0]
-        assert "text" not in structure["data"]["structure"][1]
+        assert "text" not in structure["data"]["structure"][0]["nodes"][0]
 
         assert pages["data"]["available"] is True
         assert pages["data"]["text"] == "Page one text\n\nPage two text"
@@ -364,53 +362,26 @@ def test_cat_structure_page_reuses_pageindex_client_cache_without_indexing(monke
         assert stat["data"]["pageindex_tree_status"] == "built"
 
 
-def test_cat_node_reads_pageindex_client_structure_without_custom_pifs_artifact():
+def test_cat_node_is_not_supported():
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+    from pageindex.filesystem.commands import PIFSCommandError
 
     with tempfile.TemporaryDirectory() as tmp:
-        source = Path(tmp) / "notes.md"
-        source.write_text("# Notes\n\nBody", encoding="utf-8")
         filesystem = PageIndexFileSystem(workspace=Path(tmp) / "workspace")
-        write_pageindex_client_doc(
-            filesystem.pageindex_client_workspace,
-            "doc_cached_md",
-            {
-                "id": "doc_cached_md",
-                "type": "md",
-                "path": str(source.resolve()),
-                "doc_name": "notes",
-                "doc_description": "",
-                "line_count": 3,
-                "structure": [
-                    {
-                        "title": "Notes",
-                        "node_id": "0001",
-                        "line_num": 1,
-                        "text": "# Notes\n\nBody",
-                        "nodes": [],
-                    }
-                ],
-            },
-        )
         filesystem.register_file(
-            storage_uri=source.as_uri(),
+            storage_uri="file:///tmp/notes.md",
             source_path="docs/notes.md",
             external_id="dsid_md_cached",
             title="Cached markdown notes",
-            content=source.read_text(encoding="utf-8"),
+            content="# Notes\n\nBody",
         )
         executor = PIFSCommandExecutor(filesystem, json_output=True)
 
-        node = json.loads(executor.execute("cat dsid_md_cached --node 0001"))
-
-        assert node["data"]["available"] is True
-        assert node["data"]["pageindex_doc_id"] == "doc_cached_md"
-        assert node["data"]["node"]["title"] == "Notes"
-        assert node["data"]["text"] == "# Notes\n\nBody"
-        assert "text" not in node["data"]["node"]
+        with pytest.raises(PIFSCommandError, match="Unsupported cat option: --node"):
+            executor.execute("cat dsid_md_cached --node 0001")
 
 
-def test_cat_structure_page_node_and_text_outputs_are_hard_limited():
+def test_cat_structure_page_and_text_outputs_are_hard_limited():
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
     from pageindex.filesystem.commands import PIFSCommandError
 
@@ -463,16 +434,13 @@ def test_cat_structure_page_node_and_text_outputs_are_hard_limited():
         )
         executor = PIFSCommandExecutor(filesystem, json_output=True)
 
-        first_structure = json.loads(executor.execute("cat dsid_limited_pdf --structure"))
-        assert len(first_structure["data"]["structure"]) == 25
-        assert first_structure["data"]["structure_pagination"]["has_more"] is True
-        assert first_structure["data"]["structure_pagination"]["next_offset"] == 25
-
-        second_structure = json.loads(
+        structure = json.loads(executor.execute("cat dsid_limited_pdf --structure"))
+        assert len(structure["data"]["structure"]) == 30
+        assert structure["data"]["structure"][25]["node_id"] == "0026"
+        assert "text" not in structure["data"]["structure"][0]
+        assert "structure_pagination" not in structure["data"]
+        with pytest.raises(PIFSCommandError, match="Unsupported cat option: --offset"):
             executor.execute("cat dsid_limited_pdf --structure --offset 25")
-        )
-        assert len(second_structure["data"]["structure"]) == 5
-        assert second_structure["data"]["structure"][0]["node_id"] == "0026"
 
         pages = json.loads(executor.execute("cat dsid_limited_pdf --page 1-5"))
         assert pages["data"]["text"] == (
@@ -484,38 +452,8 @@ def test_cat_structure_page_node_and_text_outputs_are_hard_limited():
         with pytest.raises(PIFSCommandError, match="evidence is sufficient"):
             executor.execute("cat dsid_limited_pdf --page 1-6")
 
-        nodes = json.loads(
-            executor.execute(
-                "cat dsid_limited_pdf --node 0001 0002 0003 0004 0005 "
-                "0006 0007 0008 0009 0010"
-            )
-        )
-        assert nodes["data"]["node_ids"] == [
-            "0001",
-            "0002",
-            "0003",
-            "0004",
-            "0005",
-            "0006",
-            "0007",
-            "0008",
-            "0009",
-            "0010",
-        ]
-        comma_nodes = json.loads(
-            executor.execute("cat dsid_limited_pdf --node 0001,0002")
-        )
-        assert comma_nodes["data"]["node_ids"] == ["0001", "0002"]
-        with pytest.raises(PIFSCommandError, match="at most 10"):
-            executor.execute(
-                "cat dsid_limited_pdf --node 0001 0002 0003 0004 0005 "
-                "0006 0007 0008 0009 0010 0011"
-            )
-        with pytest.raises(PIFSCommandError, match="continue with additional chunks"):
-            executor.execute(
-                "cat dsid_limited_pdf --node 0001 0002 0003 0004 0005 "
-                "0006 0007 0008 0009 0010 0011"
-            )
+        with pytest.raises(PIFSCommandError, match="Unsupported cat option: --node"):
+            executor.execute("cat dsid_limited_pdf --node 0001")
 
         with pytest.raises(PIFSCommandError, match="quote the whole target"):
             executor.execute("cat dsid_limited_pdf 0001")
@@ -672,10 +610,12 @@ def test_pageindex_structure_commands_are_limited_to_pdf_and_markdown():
         for command in (
             "cat dsid_text_only --structure",
             "cat dsid_text_only --page 1",
-            "cat dsid_text_only --node 0001",
         ):
             with pytest.raises(PIFSCommandError, match="only supported for PDF/Markdown"):
                 executor.execute(command)
+
+        with pytest.raises(PIFSCommandError, match="Unsupported cat option: --node"):
+            executor.execute("cat dsid_text_only --node 0001")
 
 
 def test_existing_pageindex_status_allows_legacy_record_without_format_suffix():

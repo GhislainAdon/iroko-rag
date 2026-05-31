@@ -1278,10 +1278,7 @@ class PageIndexFileSystem:
             return ""
         client._ensure_doc_loaded(doc_id)
         doc = client.documents.get(doc_id) or {}
-        page_text = self._pageindex_pages_text(doc.get("pages"))
-        if page_text:
-            return page_text
-        return self._pageindex_structure_text(doc.get("structure", []))
+        return self._pageindex_pages_text(doc.get("pages"))
 
     @staticmethod
     def _pageindex_pages_text(pages: Any) -> str:
@@ -1295,25 +1292,6 @@ class PageIndexFileSystem:
             if content:
                 parts.append(content)
         return "\n\n".join(parts)
-
-    @classmethod
-    def _pageindex_structure_text(cls, structure: Any) -> str:
-        parts: list[str] = []
-        cls._collect_pageindex_node_text(structure, parts)
-        return "\n\n".join(parts)
-
-    @classmethod
-    def _collect_pageindex_node_text(cls, node: Any, parts: list[str]) -> None:
-        if isinstance(node, list):
-            for item in node:
-                cls._collect_pageindex_node_text(item, parts)
-            return
-        if not isinstance(node, dict):
-            return
-        text = str(node.get("text") or "").strip()
-        if text:
-            parts.append(text)
-        cls._collect_pageindex_node_text(node.get("nodes", []), parts)
 
     @staticmethod
     def _raw_artifact_payload(

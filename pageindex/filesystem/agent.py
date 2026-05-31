@@ -70,22 +70,19 @@ likely browse candidate, verify the relevant claim with cat or grep before
 answering. Errors are returned as text prefixed with ERROR. Do not call commands
 that are not listed as available. When evidence is required, inspect it with cat
 or grep before answering. Prefer shell-like target-first cat syntax with stable
-targets: cat <path> --structure, cat <path> --page 31-59, and cat <path> --node
-0009. You may also use file_ref or document_id when a path is ambiguous. Do not reconstruct paths from document titles; use exact targets returned by PIFS
-commands and quote paths containing spaces. After structure identifies a
-relevant section node, prefer
-cat <path> --node <node_id>; use cat <path> --page <range> when the user asks
-for page-level evidence, no suitable node exists, or exact page text is needed.
-cat <path> --structure is paginated; request more with --offset if needed. Page
-reads are limited to five pages at once, node reads to at most ten node ids,
-and text cat --all returns only the first page of text lines. If a cat limit
-error requires a smaller call, stop when the evidence is sufficient; otherwise
-continue with another chunk before answering.
+targets: cat <path> --structure and cat <path> --page 31-59. You may also use
+file_ref or document_id when a path is ambiguous. Do not reconstruct paths from
+document titles; use exact targets returned by PIFS commands and quote paths
+containing spaces. Use cat <path> --structure to inspect the document structure
+JSON, then cat <path> --page <range> for exact page text evidence. Page reads
+are limited to five pages at once, and text cat --all returns only the first
+page of text lines. If a cat limit error requires a smaller call, stop when the
+evidence is sufficient; otherwise continue with another chunk before answering.
 For questions about metadata fields, available summaries, or whether metadata
 was provided, inspect stat --schema and stat <target> before making claims.
 Do not use stat as a general content/topic discovery step. For document Q&A,
 prefer ls/tree for folder selection, browse for file candidates, then cat
---structure and cat --node or cat --page for evidence.
+--structure and cat --page for evidence.
 """
 
 AGENT_TOOL_POLICY = """
@@ -110,15 +107,14 @@ Tool policy:
 - Do not reconstruct a file path from a title. Use exact paths returned by PIFS commands, or use file_ref/document_id when available; quote paths that contain spaces.
 - For broad topic, method, or "what solution" questions that are likely about the workspace, search for candidate documents before asking the user to choose a document.
 - Use stat only for metadata/schema/status questions or to resolve ambiguous target identity. Do not run stat merely to understand what a document says.
-- Prefer target-first cat syntax with stable targets: cat <path> --structure, cat <path> --page 31-59, cat <path> --node <node_id>.
-- cat <target> --structure returns at most 25 nodes; use --offset and --limit for more structure pages.
-- cat <target> --page accepts at most 5 pages at once. If a larger range is needed, first inspect cat <target> --structure and then read a smaller page range or node.
-- cat <target> --node accepts at most 10 node ids at once. Prefer relevant nodes from structure when possible.
-- When recovering from cat page/node/text limit errors, stop if the evidence is sufficient; if it is not sufficient, make another smaller call before answering.
+- Prefer target-first cat syntax with stable targets: cat <path> --structure, cat <path> --page 31-59.
+- cat <target> --structure returns the cached PageIndex structure JSON without text fields.
+- cat <target> --page accepts at most 5 pages at once. If a larger range is needed, first inspect cat <target> --structure and then read a smaller page range.
+- When recovering from cat page/text limit errors, stop if the evidence is sufficient; if it is not sufficient, make another smaller call before answering.
 - cat <target> --all returns at most 100 text lines; use cat <target> --range <start>-<end> for the next page.
-- After cat <target> --structure finds a relevant section/subsection with a node_id, prefer cat <target> --node <node_id> for content from that semantic unit.
-- Use cat <target> --page <start>-<end> when the user explicitly asks for pages/page ranges, when no suitable node_id exists, or when you need exact page text to verify page-level evidence.
-- Avoid fetching a broad page span after a matching node is available unless page-level citation or verification is required.
+- After cat <target> --structure identifies a relevant section/subsection, use cat <target> --page <start>-<end> for exact evidence.
+- Use cat <target> --page <start>-<end> when the user explicitly asks for pages/page ranges or when you need exact page text to verify evidence.
+- Avoid fetching a broad page span unless page-level citation or verification is required.
 - Do not call cat --page <target> <start> <end>; if you need a page span, use cat <target> --page <start>-<end>.
 - For metadata or summary-field questions, run stat --schema and stat <target> for relevant files before answering; do not infer metadata presence or absence from ls/find output alone.
 - Distinguish default/register metadata from caller-provided custom metadata when the evidence supports it.

@@ -5,7 +5,7 @@ This mirrors examples/agentic_vectorless_rag_demo.py, but exposes a corpus
 through the PageIndex FileSystem shell instead of direct PageIndex document
 tools. The agent receives one read-only bash-like PIFS tool and must retrieve
 evidence through commands such as ls, tree, browse, find, grep, cat <path>
---structure, cat <path> --page, and cat <path> --node.
+--structure, and cat <path> --page.
 
 The demo registers supported files under examples/documents. When a matching
 examples/documents/results/*_structure.json file exists, it is loaded into the
@@ -81,7 +81,7 @@ Retrieval strategy:
   browse -R /documents "Federal Reserve supervision regulation"
 - browse returns file candidates only; it is not folder semantic recall.
 - After browse returns candidates, verify evidence with grep, cat <path>
-  --structure, cat <path> --node, or cat <path> --page before answering.
+  --structure, or cat <path> --page before answering.
 - Use find --where only with JSON metadata DSL, for example:
   find /documents --where '{"file_format":"pdf"}'
 - Use grep -R only for lexical evidence; do not treat semantic candidates as

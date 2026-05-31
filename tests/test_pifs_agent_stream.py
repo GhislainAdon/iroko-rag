@@ -218,13 +218,17 @@ class PIFSAgentStreamTest(unittest.TestCase):
 
         self.assertEqual(output, '{"answer":"done","document_ids":["dsid_1"]}')
 
-    def test_prompt_tells_agent_when_to_choose_node_or_page(self):
-        self.assertIn("prefer cat <target> --node <node_id>", AGENT_TOOL_POLICY)
-        self.assertIn("page-level evidence", AGENT_TOOL_POLICY)
-        self.assertIn("prefer\ncat <path> --node <node_id>", BASH_TOOL_DESCRIPTION)
+    def test_prompt_tells_agent_to_use_structure_then_page(self):
+        self.assertIn(
+            "cat <target> --structure returns the cached PageIndex structure JSON",
+            AGENT_TOOL_POLICY,
+        )
+        self.assertIn("exact page text", BASH_TOOL_DESCRIPTION)
+        self.assertIn("cat <path> --structure and cat <path> --page", BASH_TOOL_DESCRIPTION)
         self.assertIn("stop if the evidence is sufficient", AGENT_TOOL_POLICY)
         self.assertIn("continue with another chunk before answering", BASH_TOOL_DESCRIPTION)
-        self.assertIn("Do not reconstruct paths from document titles", BASH_TOOL_DESCRIPTION)
+        self.assertIn("Do not reconstruct paths from", BASH_TOOL_DESCRIPTION)
+        self.assertIn("document titles", BASH_TOOL_DESCRIPTION)
         self.assertIn("file_ref/document_id", AGENT_TOOL_POLICY)
 
     def test_prompt_requires_stat_for_metadata_questions(self):
@@ -244,7 +248,6 @@ class PIFSAgentStreamTest(unittest.TestCase):
         self.assertIn("browse returns file candidates only", AGENT_TOOL_POLICY)
         self.assertIn("verify the relevant facts with cat or grep", AGENT_TOOL_POLICY)
         self.assertIn("cat <target> --structure", AGENT_TOOL_POLICY)
-        self.assertIn("cat <target> --node <node_id>", AGENT_TOOL_POLICY)
         self.assertIn("cat <target> --page", AGENT_TOOL_POLICY)
         self.assertIn("Do not use browse as folder semantic recall", AGENT_TOOL_POLICY)
 
