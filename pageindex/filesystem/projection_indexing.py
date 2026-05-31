@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .embedding_defaults import DEFAULT_EMBEDDING_DIMENSIONS
+from .core import DEFAULT_EMBEDDING_DIMENSIONS
 from .hybrid_projection import (
     EmbeddingCache,
     INDEX_BY_CHANNEL,

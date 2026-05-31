@@ -42,7 +42,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
 from pageindex import PageIndexClient
 from pageindex.filesystem import MetadataGenerator, PageIndexFileSystem, PIFSCommandExecutor
 from pageindex.filesystem.agent import run_pifs_agent
-from pageindex.filesystem.embedding_defaults import DEFAULT_EMBEDDING_DIMENSIONS
+from pageindex.filesystem.core import DEFAULT_EMBEDDING_DIMENSIONS
 
 
 EXAMPLES_DIR = Path(__file__).parent

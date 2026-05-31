@@ -16,7 +16,6 @@ from .metadata_generation import (
     MetadataGenerationResult,
     MetadataGenerator,
 )
-from .embedding_defaults import DEFAULT_EMBEDDING_DIMENSIONS
 from .store import (
     SQLiteFileSystemStore,
     fingerprint,
@@ -70,6 +69,7 @@ PROJECTION_INDEX_STATUSES = {
     "failed",
 }
 
+DEFAULT_EMBEDDING_DIMENSIONS = 1024
 SEMANTIC_RETRIEVAL_CHANNELS = ("summary", "entity", "relation")
 SEMANTIC_PROJECTION_INDEX_NAMES = {
     "summary": "summary_only_vector",
