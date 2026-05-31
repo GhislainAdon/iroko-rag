@@ -441,7 +441,7 @@ class PageIndexFileSystem:
             if len(rows) >= needed:
                 break
         page_rows = rows[offset : offset + page_size]
-        return {
+        payload = {
             "mode": "files",
             "retrieval": f"{space}_vector",
             "query": query,
@@ -454,6 +454,9 @@ class PageIndexFileSystem:
             "has_more": len(rows) > offset + page_size,
             "data": page_rows,
         }
+        if metadata_filter is not None:
+            payload["where"] = self._metadata_filter_payload(metadata_filter)
+        return payload
 
     def folder_info(self, path: str = "/") -> dict[str, Any]:
         return self.store.folder_info(path)
@@ -1663,6 +1666,17 @@ class PageIndexFileSystem:
         if score is None:
             return 0.0
         return round(max(0.0, min(1.0, score)), 4)
+
+    @staticmethod
+    def _metadata_filter_payload(metadata_filter: Any) -> str:
+        if isinstance(metadata_filter, str):
+            return metadata_filter
+        return json.dumps(
+            metadata_filter,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
     def _stable_file_locator(self, file_ref: str, entry: Any) -> str:
         source_path = str(getattr(entry, "source_path", "") or "").strip()

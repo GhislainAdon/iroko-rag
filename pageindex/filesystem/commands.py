@@ -1155,6 +1155,8 @@ class PIFSCommandExecutor:
             return self._render_listing(data)
         if command_name == "tree":
             return self._render_tree(data)
+        if command_name == "browse":
+            return self._render_browse(data)
         if command_name in {"grep", "semantic-grep"}:
             return self._render_grep(data)
         if command_name in {"search-summary", "search-entity", "search-relation"}:
@@ -1300,6 +1302,86 @@ class PIFSCommandExecutor:
             lines.append(f"line_text: {line_text or '-'}")
             lines.append("")
         return "\n".join(lines).rstrip()
+
+    def _render_browse(self, data: Any) -> str:
+        if not isinstance(data, dict):
+            return str(data)
+        page = self._coerce_positive_int(data.get("page"), default=1)
+        page_size = self._coerce_positive_int(
+            data.get("page_size"),
+            default=self.BROWSE_PAGE_SIZE,
+        )
+        has_more = bool(data.get("has_more"))
+        lines = [
+            f"# page={page} page_size={page_size} "
+            f"has_more={'true' if has_more else 'false'}"
+        ]
+        results = data.get("data") or []
+        for index, item in enumerate(results):
+            if index:
+                lines.append("")
+            item = item if isinstance(item, dict) else {}
+            lines.extend(
+                [
+                    f"rank: {item.get('rank') or index + 1}",
+                    f"similarity: {self._format_similarity(item.get('similarity'))}",
+                    f"path: {self._browse_result_path(item)}",
+                    "summary: "
+                    f"{self._compact_text(self._one_line_value(item.get('summary')), max_chars=240)}",
+                ]
+            )
+        if has_more:
+            if results:
+                lines.append("")
+            lines.append(f"# next: {self._browse_next_command(data, page=page)}")
+        return "\n".join(lines).rstrip()
+
+    @staticmethod
+    def _coerce_positive_int(value: Any, *, default: int) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return parsed if parsed >= 1 else default
+
+    @staticmethod
+    def _format_similarity(value: Any) -> str:
+        try:
+            similarity = float(value)
+        except (TypeError, ValueError):
+            similarity = 0.0
+        similarity = max(0.0, min(1.0, similarity))
+        return f"{similarity:.2f}"
+
+    @staticmethod
+    def _browse_result_path(item: dict[str, Any]) -> str:
+        return str(
+            item.get("path")
+            or item.get("document_id")
+            or item.get("external_id")
+            or item.get("file_ref")
+            or "-"
+        )
+
+    def _browse_next_command(self, data: dict[str, Any], *, page: int) -> str:
+        parts = ["browse"]
+        if data.get("recursive"):
+            parts.append("-R")
+        parts.append(shlex.quote(str(data.get("scope") or "/")))
+        parts.append(shlex.quote(str(data.get("query") or "")))
+        space = str(data.get("space") or "summary")
+        if space != "summary":
+            parts.extend(["--space", shlex.quote(space)])
+        if data.get("where") is not None:
+            parts.extend(["--where", shlex.quote(self._browse_where_text(data["where"]))])
+        parts.extend(["--page", str(page + 1)])
+        return " ".join(parts)
+
+    @staticmethod
+    def _browse_where_text(where: Any) -> str:
+        if isinstance(where, str):
+            return where
+        return json.dumps(where, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
     def _render_find(self, data: Any) -> str:
         if not isinstance(data, list):
