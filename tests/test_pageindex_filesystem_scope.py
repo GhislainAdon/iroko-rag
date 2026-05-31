@@ -106,13 +106,22 @@ class BrowseBackend:
         ]
 
 
-def _register_browse_file(filesystem, external_id, folder_path, *, department="ops"):
+def _register_browse_file(
+    filesystem,
+    external_id,
+    folder_path,
+    *,
+    department="ops",
+    summary=None,
+):
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult
 
     class SummaryGenerator:
         def generate(self, document, *, fields):
             values = {
-                "summary": f"summary for {document.external_id}",
+                "summary": summary
+                if summary is not None
+                else f"summary for {document.external_id}",
                 "doc_type": "memo",
                 "domain": "finance",
                 "topic": "risk",
@@ -318,6 +327,124 @@ def test_browse_scopes_semantic_search_before_candidate_limit(tmp_path):
         "doc_deep",
         "doc_direct",
     ]
+
+
+def test_browse_shell_output_uses_fixed_blocks_with_pagination_command(tmp_path):
+    import re
+
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+
+    filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    document_ids = []
+    for index in range(12):
+        external_id = f"doc_{index:02d}"
+        document_ids.append(external_id)
+        _register_browse_file(
+            filesystem,
+            external_id,
+            "/documents",
+            department="finance",
+            summary=(
+                "first line\nsecond\tline   with spaces"
+                if index == 0
+                else f"summary for {external_id}"
+            ),
+        )
+    filesystem.semantic_retrieval_backend = BrowseBackend(
+        document_ids,
+        channels=("summary", "entity"),
+    )
+    executor = PIFSCommandExecutor(filesystem)
+
+    rendered = executor.execute(
+        'browse -R /documents "vector database" --space entity '
+        '--where \'{"department":"finance"}\''
+    )
+    lines = rendered.splitlines()
+
+    assert lines[:6] == [
+        "# page=1 page_size=10 has_more=true",
+        "rank: 1",
+        "similarity: 0.91",
+        "path: /documents/doc_00.txt",
+        "summary: first line second line with spaces",
+        "",
+    ]
+    assert lines[6:10] == [
+        "rank: 2",
+        "similarity: 0.83",
+        "path: /documents/doc_01.txt",
+        "summary: summary for doc_01",
+    ]
+    similarity_lines = [line for line in lines if line.startswith("similarity: ")]
+    assert len(similarity_lines) == 10
+    assert all(re.fullmatch(r"similarity: [01]\.\d{2}", line) for line in similarity_lines)
+    assert all(0.0 <= float(line.removeprefix("similarity: ")) <= 1.0 for line in similarity_lines)
+    assert lines[-1] == (
+        "# next: browse -R /documents 'vector database' --space entity "
+        '--where \'{"department":"finance"}\' --page 2'
+    )
+    assert "mode:" not in rendered
+    assert "data:" not in rendered
+    assert "score:" not in rendered
+
+
+def test_browse_shell_path_falls_back_to_unique_locator_when_source_collides(tmp_path):
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+    from pageindex.filesystem.metadata_generation import MetadataGenerationResult
+
+    class SummaryGenerator:
+        def generate(self, document, *, fields):
+            return MetadataGenerationResult(
+                values={"summary": f"summary for {document.external_id}"}
+            )
+
+    filesystem = PageIndexFileSystem(
+        workspace=tmp_path / "workspace",
+        metadata_generator=SummaryGenerator(),
+    )
+    first_ref = filesystem.register_file(
+        storage_uri="file:///tmp/first.json",
+        source_path="shared/source.json",
+        folder_path="/documents",
+        external_id="dsid_first",
+        title="First",
+        content="first content",
+        metadata_policy={
+            "fields": {
+                "summary": True,
+                "doc_type": False,
+                "domain": False,
+                "topic": False,
+            }
+        },
+    )
+    filesystem.register_file(
+        storage_uri="file:///tmp/second.json",
+        source_path="shared/source.json",
+        folder_path="/documents",
+        external_id="dsid_second",
+        title="Second",
+        content="second content",
+        metadata_policy={
+            "fields": {
+                "summary": True,
+                "doc_type": False,
+                "domain": False,
+                "topic": False,
+            }
+        },
+    )
+    filesystem.semantic_retrieval_backend = BrowseBackend(["dsid_first"])
+    executor = PIFSCommandExecutor(filesystem)
+
+    rendered = executor.execute('browse /documents "first"')
+
+    assert "path: dsid_first" in rendered
+    assert "path: /shared/source.json" not in rendered
+    assert filesystem.store.resolve_file_ref("dsid_first") == first_ref
+    with pytest.raises(KeyError, match="Ambiguous file target"):
+        filesystem.store.resolve_file_ref("/shared/source.json")
 
 
 def test_semantic_search_scope_keeps_ordinary_folders_out_of_source_type_filters(tmp_path):
