@@ -43,7 +43,6 @@ class SQLiteFileSystemStore:
                 file_ref TEXT PRIMARY KEY,
                 external_id TEXT,
                 storage_uri TEXT NOT NULL,
-                source_path TEXT NOT NULL,
                 title TEXT NOT NULL,
                 descriptor TEXT NOT NULL,
                 content_type TEXT NOT NULL,
@@ -124,7 +123,6 @@ class SQLiteFileSystemStore:
             USING fts5(file_ref UNINDEXED, title, body, metadata_text);
 
             CREATE INDEX IF NOT EXISTS idx_files_external_id ON files(external_id);
-            CREATE INDEX IF NOT EXISTS idx_files_source_path ON files(source_path);
             CREATE INDEX IF NOT EXISTS idx_files_source_type ON files(source_type);
             CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
             CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);
@@ -168,6 +166,7 @@ class SQLiteFileSystemStore:
             fts_file_ref_rows = []
             fts_rows = []
             metadata_rows = []
+            pending_folder_titles: dict[tuple[str, str], str] = {}
             metadata_field_ids = {
                 row["name"]: row["field_id"]
                 for row in conn.execute(
@@ -184,6 +183,18 @@ class SQLiteFileSystemStore:
                         kind=record.get("folder_kind", "manual"),
                     )
                     folder_cache[folder_cache_key] = folder_id
+                self._ensure_title_available_in_folder(
+                    conn,
+                    folder_id=folder_id,
+                    file_ref=record["file_ref"],
+                    title=record["title"],
+                )
+                title_key = (folder_id, str(record["title"]))
+                existing_file_ref = pending_folder_titles.get(title_key)
+                if existing_file_ref and existing_file_ref != record["file_ref"]:
+                    target = self._virtual_file_target(conn, folder_id, str(record["title"]))
+                    raise FileExistsError(f"File already exists at {target}")
+                pending_folder_titles[title_key] = record["file_ref"]
                 file_rows.append(self._file_insert_values(record))
                 membership_rows.append(
                     (
@@ -244,7 +255,6 @@ class SQLiteFileSystemStore:
             "file_ref",
             "external_id",
             "storage_uri",
-            "source_path",
             "title",
             "descriptor",
             "content_type",
@@ -270,7 +280,6 @@ class SQLiteFileSystemStore:
             record["file_ref"],
             record["external_id"],
             record["storage_uri"],
-            record["source_path"],
             record["title"],
             record["descriptor"],
             record["content_type"],
@@ -338,6 +347,12 @@ class SQLiteFileSystemStore:
         with self.connect() as conn:
             resolved_file_ref = self._resolve_file_ref(conn, file_ref)
             folder_id = self._resolve_or_create_folder(conn, folder_path_or_id)
+            self._ensure_title_available_in_folder(
+                conn,
+                folder_id=folder_id,
+                file_ref=resolved_file_ref,
+                title=self._file_title(conn, resolved_file_ref),
+            )
             conn.execute(
                 """
                 INSERT INTO file_folders(file_ref, folder_id, metadata_json)
@@ -357,6 +372,12 @@ class SQLiteFileSystemStore:
             for item in items:
                 resolved_file_ref = self._resolve_file_ref(conn, item["file_ref"])
                 folder_id = self._resolve_or_create_folder(conn, item["folder"])
+                self._ensure_title_available_in_folder(
+                    conn,
+                    folder_id=folder_id,
+                    file_ref=resolved_file_ref,
+                    title=self._file_title(conn, resolved_file_ref),
+                )
                 conn.execute(
                     """
                     INSERT INTO file_folders(file_ref, folder_id, metadata_json)
@@ -370,6 +391,56 @@ class SQLiteFileSystemStore:
                         json.dumps(item.get("metadata") or {}, ensure_ascii=False),
                     ),
                 )
+
+    def _ensure_title_available_in_folder(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        folder_id: str,
+        file_ref: str,
+        title: str,
+    ) -> None:
+        row = conn.execute(
+            """
+            SELECT f.file_ref, fo.path
+            FROM files f
+            JOIN file_folders ff ON ff.file_ref = f.file_ref
+            JOIN folders fo ON fo.folder_id = ff.folder_id
+            WHERE f.deleted_at IS NULL
+              AND ff.folder_id = ?
+              AND f.title = ?
+              AND f.file_ref != ?
+            LIMIT 1
+            """,
+            (folder_id, title, file_ref),
+        ).fetchone()
+        if row:
+            raise FileExistsError(
+                f"File already exists at {self._virtual_file_target(conn, folder_id, title)}"
+            )
+
+    @staticmethod
+    def _virtual_file_target(
+        conn: sqlite3.Connection,
+        folder_id: str,
+        title: str,
+    ) -> str:
+        row = conn.execute(
+            "SELECT path FROM folders WHERE folder_id = ?",
+            (folder_id,),
+        ).fetchone()
+        folder_path = normalize_path(row["path"] if row else "/")
+        return f"/{title}" if folder_path == "/" else f"{folder_path}/{title}"
+
+    @staticmethod
+    def _file_title(conn: sqlite3.Connection, file_ref: str) -> str:
+        row = conn.execute(
+            "SELECT title FROM files WHERE file_ref = ? AND deleted_at IS NULL",
+            (file_ref,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"Unknown file target: {file_ref}")
+        return str(row["title"])
 
     def replace_metadata_values(
         self,
@@ -791,7 +862,6 @@ class SQLiteFileSystemStore:
         selects = [
             "f.file_ref",
             "f.external_id",
-            "f.source_path",
             "f.title",
             "f.descriptor",
             "f.pageindex_tree_status",
@@ -984,7 +1054,6 @@ class SQLiteFileSystemStore:
                 f.file_ref,
                 f.external_id,
                 f.storage_uri,
-                f.source_path,
                 f.title,
                 f.descriptor,
                 f.content_type,
@@ -1125,30 +1194,6 @@ class SQLiteFileSystemStore:
         ).fetchone()
         if row:
             return row["file_ref"]
-        stripped = target.strip("/")
-        rows = conn.execute(
-            """
-            SELECT
-                f.file_ref,
-                f.external_id,
-                f.title,
-                f.source_path,
-                COALESCE(MIN(fo.path), '/') AS folder_path
-            FROM files f
-            LEFT JOIN file_folders ff ON ff.file_ref = f.file_ref
-            LEFT JOIN folders fo ON fo.folder_id = ff.folder_id
-            WHERE f.source_path = ? AND f.deleted_at IS NULL
-            GROUP BY f.file_ref, f.external_id, f.title, f.source_path
-            ORDER BY f.file_ref
-            LIMIT 2
-            """,
-            (stripped,),
-        ).fetchall()
-        if len(rows) > 1:
-            matches = "; ".join(self._virtual_match_summary(row) for row in rows)
-            raise KeyError(f"Ambiguous file target: {target}. Matches: {matches}")
-        if rows:
-            return rows[0]["file_ref"]
         virtual_file_ref = self._resolve_virtual_file_ref(conn, target)
         if virtual_file_ref:
             return virtual_file_ref
@@ -1163,12 +1208,9 @@ class SQLiteFileSystemStore:
                     f.file_ref,
                     f.external_id,
                     f.title,
-                    f.source_path,
                     pf.path AS folder_path,
                     (CASE WHEN pf.path = '/' THEN '/' ELSE pf.path || '/' END)
-                        || ltrim(f.title, '/') AS title_virtual_path,
-                    (CASE WHEN pf.path = '/' THEN '/' ELSE pf.path || '/' END)
-                        || ltrim(f.source_path, '/') AS source_virtual_path
+                        || ltrim(f.title, '/') AS title_virtual_path
                 FROM files f
                 JOIN file_folders ff ON ff.file_ref = f.file_ref
                 JOIN folders pf ON pf.folder_id = ff.folder_id
@@ -1178,16 +1220,14 @@ class SQLiteFileSystemStore:
                 file_ref,
                 external_id,
                 title,
-                source_path,
                 MIN(folder_path) AS folder_path
             FROM virtual_matches
             WHERE title_virtual_path = ?
-               OR source_virtual_path = ?
-            GROUP BY file_ref, external_id, title, source_path
+            GROUP BY file_ref, external_id, title
             ORDER BY file_ref
             LIMIT 2
             """,
-            (virtual_target, virtual_target),
+            (virtual_target,),
         ).fetchall()
         if not rows:
             return None
@@ -1201,8 +1241,7 @@ class SQLiteFileSystemStore:
         external_id = row["external_id"] or "-"
         return (
             f"file_ref={row['file_ref']} external_id={external_id} "
-            f"folder={row['folder_path']} title={row['title']!r} "
-            f"source_path={row['source_path']!r}"
+            f"folder={row['folder_path']} title={row['title']!r}"
         )
 
     def ensure_folder(
@@ -1475,18 +1514,12 @@ class SQLiteFileSystemStore:
                 JOIN folders fo ON fo.folder_id = ff.folder_id
                 WHERE f.deleted_at IS NULL
                   AND fo.path = ?
-                  AND (
-                      f.title = ?
-                      OR f.source_path = ?
-                      OR f.source_path LIKE ? ESCAPE '\\'
-                  )
+                  AND f.title = ?
                 LIMIT 1
                 """,
                 (
                     path,
                     basename,
-                    basename,
-                    "%/" + self._like_escape(basename),
                 ),
             ).fetchone()
         return row is not None
@@ -1548,7 +1581,6 @@ class SQLiteFileSystemStore:
                 f.file_ref,
                 f.external_id,
                 f.storage_uri,
-                f.source_path,
                 f.title,
                 f.descriptor,
                 f.content_type,
@@ -1592,7 +1624,6 @@ class SQLiteFileSystemStore:
                 f.external_id,
                 f.title,
                 f.descriptor,
-                f.source_path,
                 f.pageindex_tree_status,
                 f.metadata_json,
                 f.metadata_status_json,
@@ -1804,7 +1835,6 @@ class SQLiteFileSystemStore:
             "pageNum": None,
             "createdAt": cls._row_value(row, "created_at"),
             "folderId": cls._row_value(row, "folder_id"),
-            "source_path": row["source_path"],
             "folder_path": row["folder_path"],
             "metadata": json.loads(row["metadata_json"] or "{}"),
             "metadata_status": json.loads(
@@ -1827,7 +1857,6 @@ class SQLiteFileSystemStore:
             "pageNum": None,
             "createdAt": cls._row_value(row, "created_at"),
             "folderId": cls._row_value(row, "folder_id"),
-            "source_path": row["source_path"],
             "snippet": row["snippet"] or row["title"],
             "folder_path": row["folder_path"],
             "metadata": json.loads(row["metadata_json"] or "{}"),
@@ -1846,7 +1875,6 @@ class SQLiteFileSystemStore:
             file_ref=row["file_ref"],
             external_id=row["external_id"],
             storage_uri=row["storage_uri"],
-            source_path=row["source_path"],
             title=row["title"],
             descriptor=row["descriptor"],
             content_type=row["content_type"],
@@ -1871,8 +1899,7 @@ class SQLiteFileSystemStore:
             "document_id": entry.external_id,
             "external_id": entry.external_id,
             "name": entry.title,
-            "storage_uri": entry.storage_uri,
-            "source_path": entry.source_path,
+            "path": cls._virtual_file_path(entry.folder_path, entry.title),
             "title": entry.title,
             "description": entry.descriptor,
             "status": entry.pageindex_tree_status,
@@ -1881,14 +1908,17 @@ class SQLiteFileSystemStore:
             "content_type": entry.content_type,
             "source_type": entry.source_type,
             "fingerprint": entry.fingerprint,
-            "text_artifact_path": entry.text_artifact_path,
-            "raw_artifact_path": entry.raw_artifact_path,
             "pageindex_doc_id": entry.pageindex_doc_id,
             "pageindex_tree_status": entry.pageindex_tree_status,
             "metadata": entry.metadata,
             "metadata_status": entry.metadata_status,
             "folder_path": entry.folder_path,
         }
+
+    @staticmethod
+    def _virtual_file_path(folder_path: str, title: str) -> str:
+        folder_path = normalize_path(folder_path)
+        return f"/{title}" if folder_path == "/" else f"{folder_path}/{title}"
 
     @staticmethod
     def _query_text(query: str | list[str] | None) -> str:

@@ -3,9 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
-import subprocess
 from dataclasses import asdict, is_dataclass
-from pathlib import Path
 from typing import Any
 
 from .core import SEMANTIC_RETRIEVAL_CHANNELS, PageIndexFileSystem
@@ -411,35 +409,18 @@ class PIFSCommandExecutor:
                             "mode": "files",
                             "query": query,
                             "scope": normalized,
-                            "data": self._grep_file_hits_from_results(direct_results, query),
+                            "data": self._grep_file_hits_from_results(
+                                direct_results,
+                                query,
+                                require_match=True,
+                            ),
                         }
-                    if where is None:
-                        direct_source_hits = self._grep_source_file_hits(
-                            normalized,
-                            query,
-                            limit=limit,
-                            direct_only=True,
-                        )
-                        if direct_source_hits:
-                            return {
-                                "mode": "files",
-                                "query": query,
-                                "scope": normalized,
-                                "data": direct_source_hits,
-                            }
                     ranked = self._rank_child_folders(
                         query=query,
                         children=children,
                         metadata_filter=where,
                         limit=limit,
                     )
-                    if not ranked and where is None:
-                        ranked = self._rank_child_folders_from_source(
-                            query=query,
-                            parent_path=normalized,
-                            children=children,
-                            limit=limit,
-                        )
                     return {
                         "mode": "folders",
                         "query": query,
@@ -453,19 +434,15 @@ class PIFSCommandExecutor:
                 metadata_filter=where,
                 limit=limit,
             )
-            if not results and where is None:
-                source_hits = self._grep_source_file_hits(normalized, query, limit=limit)
-                return {
-                    "mode": "files",
-                    "query": query,
-                    "scope": normalized,
-                    "data": source_hits,
-                }
             return {
                 "mode": "files",
                 "query": query,
                 "scope": normalized,
-                "data": self._grep_file_hits_from_results(results, query),
+                "data": self._grep_file_hits_from_results(
+                    results,
+                    query,
+                    require_match=True,
+                ),
             }
         return {
             "mode": "matches",
@@ -976,11 +953,9 @@ class PIFSCommandExecutor:
         if data.get("mode") == "files":
             return "\n\n".join(self._render_stat(item) for item in data.get("data", []))
         lines = [
-            f"target: {data.get('target') or data.get('file_ref')}",
+            f"target: {data.get('path') or data.get('target') or data.get('file_ref')}",
             f"file_ref: {data.get('file_ref')}",
             f"document_id: {data.get('external_id') or data.get('document_id') or '-'}",
-            f"source_path: {data.get('source_path') or '-'}",
-            f"storage_uri: {data.get('storage_uri') or '-'}",
         ]
         folders = data.get("folders") or []
         if folders:
@@ -1019,11 +994,10 @@ class PIFSCommandExecutor:
         file_ref = item.get("file_ref")
         doc_id = item.get("external_id") or item.get("document_id") or "-"
         title = self._compact_text(item.get("title") or item.get("name") or "", max_chars=80)
-        source_path = item.get("source_path") or "-"
         folder_paths = item.get("folder_paths") or self._folder_paths_for_file(file_ref)
         folders = f" folders={','.join(folder_paths)}" if folder_paths else ""
         target = self._file_target_path(item)
-        return f"{target} id={doc_id} file_ref={file_ref or '-'} title={title} source={source_path}{folders}".strip()
+        return f"{target} id={doc_id} file_ref={file_ref or '-'} title={title}{folders}".strip()
 
     def _grep_file_hit_text(self, item: dict[str, Any]) -> str:
         doc_id = item.get("external_id") or "-"
@@ -1046,7 +1020,7 @@ class PIFSCommandExecutor:
         if folder_paths and title:
             folder = str(folder_paths[0] or "/").rstrip("/")
             return f"{folder}/{title}" if folder else f"/{title}"
-        return str(item.get("source_path") or item.get("external_id") or file_ref or "-")
+        return str(item.get("external_id") or file_ref or "-")
 
     def _semantic_retrieval_query(self, query: str) -> str:
         query = str(query or "").strip()
@@ -1150,83 +1124,12 @@ class PIFSCommandExecutor:
                     "file_ref": result.file_ref,
                     "external_id": result.external_id,
                     "title": result.title,
-                    "source_path": result.source_path,
                     "folder_paths": result.folder_paths,
                     "line": line,
                     "text": text or result.snippet,
                 }
             )
             if limit is not None and len(hits) >= limit:
-                break
-        return hits
-
-    def _rank_child_folders_from_source(
-        self,
-        *,
-        query: str,
-        parent_path: str,
-        children: list[dict[str, Any]],
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        source_dir = self._source_dir_for_folder(parent_path)
-        source_root = self._source_root()
-        if source_dir is None or source_root is None:
-            return []
-        child_paths = {child["path"]: child for child in children}
-        counts: dict[str, int] = {}
-        for path in self._rg_candidate_files(query, source_dir, max_files=5000):
-            source_path = self._source_path_from_storage(path, source_root)
-            folder_path = "/" + str(Path(source_path).parent).strip("/")
-            child_path = self._matching_child_path(parent_path, folder_path, child_paths)
-            if child_path:
-                counts[child_path] = counts.get(child_path, 0) + 1
-        ranked = [
-            {
-                "path": path,
-                "name": child_paths[path]["name"],
-                "matched_files": matched,
-                "files": self.filesystem.store.count_files_in_folder(path, recursive=True),
-                "children_count": child_paths[path].get("children_count", 0),
-            }
-            for path, matched in counts.items()
-        ]
-        ranked.sort(key=lambda item: (-item["matched_files"], item["path"]))
-        return ranked[:limit]
-
-    def _grep_source_file_hits(
-        self,
-        folder_path: str,
-        query: str,
-        *,
-        limit: int,
-        direct_only: bool = False,
-    ) -> list[dict[str, Any]]:
-        source_dir = self._source_dir_for_folder(folder_path)
-        source_root = self._source_root()
-        if source_dir is None or source_root is None:
-            return []
-        hits = []
-        for path in self._rg_candidate_files(query, source_dir, max_files=max(limit * 10, 50)):
-            file_row = self._file_row_for_storage(path)
-            if not file_row:
-                continue
-            if direct_only and self._folder_path_for_source_path(file_row["source_path"]) != folder_path:
-                continue
-            line_number, text = self._first_matching_source_line(path, query)
-            if line_number is None:
-                continue
-            hits.append(
-                {
-                    "file_ref": file_row["file_ref"],
-                    "external_id": file_row["external_id"],
-                    "title": file_row["title"],
-                    "source_path": file_row["source_path"],
-                    "folder_paths": self._folder_paths_for_file(file_row["file_ref"]),
-                    "line": line_number,
-                    "text": text or file_row["title"],
-                }
-            )
-            if len(hits) >= limit:
                 break
         return hits
 
@@ -1241,7 +1144,6 @@ class PIFSCommandExecutor:
                         "file_ref": file_ref,
                         "external_id": entry.external_id,
                         "title": entry.title,
-                        "source_path": entry.source_path,
                         "folder_paths": self._folder_paths_for_file(file_ref),
                         "line": line_number,
                         "text": self._compact_text(line, max_chars=220),
@@ -1268,136 +1170,6 @@ class PIFSCommandExecutor:
     @staticmethod
     def _is_combined_grep_flag(arg: str) -> bool:
         return bool(re.fullmatch(r"-[Rrni]+", arg)) and len(arg) > 2
-
-    def _rg_candidate_files(self, query: str, directory: Path, *, max_files: int) -> list[Path]:
-        if not directory.exists():
-            return []
-        terms = [term.lower() for term in re.findall(r"[A-Za-z0-9_]{3,}", query)]
-        if not terms:
-            return []
-        primary = max(terms, key=len)
-        try:
-            completed = subprocess.run(
-                [
-                    "rg",
-                    "-l",
-                    "-i",
-                    "-F",
-                    primary,
-                    str(directory),
-                    "--glob",
-                    "*.json",
-                    "--no-messages",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=20,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return []
-        candidates = [Path(line) for line in completed.stdout.splitlines() if line.strip()]
-        filtered = []
-        for path in candidates[: max(max_files * 20, max_files)]:
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore").lower()
-            except OSError:
-                continue
-            if all(term in text for term in terms):
-                filtered.append(path)
-                if len(filtered) >= max_files:
-                    break
-        return filtered
-
-    def _first_matching_source_line(self, path: Path, query: str) -> tuple[int | None, str]:
-        try:
-            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-        except OSError:
-            return None, ""
-        for line_number, line in enumerate(lines, 1):
-            if self._line_matches(line, query):
-                return line_number, self._compact_text(line, max_chars=220)
-        return None, ""
-
-    def _source_root(self) -> Path | None:
-        with self.filesystem.store.connect() as conn:
-            row = conn.execute(
-                """
-                SELECT storage_uri, source_path
-                FROM files
-                WHERE deleted_at IS NULL
-                LIMIT 1
-                """
-            ).fetchone()
-        if row is None:
-            return None
-        storage_path = Path(row["storage_uri"])
-        source_path = Path(row["source_path"])
-        root = storage_path
-        for _ in range(len(source_path.parts)):
-            root = root.parent
-        return root
-
-    def _source_dir_for_folder(self, folder_path: str) -> Path | None:
-        source_root = self._source_root()
-        if source_root is None:
-            return None
-        stripped = folder_path.strip("/")
-        return source_root / stripped if stripped else source_root
-
-    @staticmethod
-    def _source_path_from_storage(path: Path, source_root: Path) -> str:
-        try:
-            return path.relative_to(source_root).as_posix()
-        except ValueError:
-            return path.name
-
-    @staticmethod
-    def _matching_child_path(
-        parent_path: str,
-        folder_path: str,
-        child_paths: dict[str, dict[str, Any]],
-    ) -> str | None:
-        normalized_parent = parent_path.rstrip("/")
-        if normalized_parent == "":
-            normalized_parent = "/"
-        if normalized_parent == "/":
-            parts = [part for part in folder_path.strip("/").split("/") if part]
-            candidate = "/" + parts[0] if parts else "/"
-            return candidate if candidate in child_paths else None
-        prefix = normalized_parent + "/"
-        if not folder_path.startswith(prefix):
-            return None
-        remainder = folder_path[len(prefix):]
-        first = remainder.split("/", 1)[0]
-        candidate = prefix + first
-        return candidate if candidate in child_paths else None
-
-    def _file_row_for_storage(self, path: Path) -> dict[str, Any] | None:
-        storage_uri = str(path)
-        with self.filesystem.store.connect() as conn:
-            row = conn.execute(
-                """
-                SELECT file_ref, external_id, title, source_path
-                FROM files
-                WHERE storage_uri = ? AND deleted_at IS NULL
-                LIMIT 1
-                """,
-                (storage_uri,),
-            ).fetchone()
-        if row is None:
-            return None
-        return {
-            "file_ref": row["file_ref"],
-            "external_id": row["external_id"],
-            "title": row["title"],
-            "source_path": row["source_path"],
-        }
-
-    @staticmethod
-    def _folder_path_for_source_path(source_path: str) -> str:
-        parent = str(Path(source_path).parent).strip(".")
-        return "/" + parent.strip("/") if parent and parent != "." else "/"
 
     def _folder_paths_for_file(self, file_ref: str | None) -> list[str]:
         if not file_ref:

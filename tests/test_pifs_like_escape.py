@@ -14,7 +14,6 @@ def _register_file(
     source.write_text(f"{external_id} fixture text", encoding="utf-8")
     filesystem.register_file(
         storage_uri=source.as_uri(),
-        source_path=f"docs/{filename}",
         folder_path=folder_path,
         external_id=external_id,
         title=external_id,

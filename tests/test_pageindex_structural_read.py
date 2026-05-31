@@ -60,7 +60,6 @@ def test_pageindex_structure_options_report_failed_register_build(monkeypatch):
         monkeypatch.setattr(PageIndexClient, "index", fail_index)
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path="docs/report.md",
             external_id="dsid_structural_missing",
             title="Structural report",
             content=source.read_text(encoding="utf-8"),
@@ -152,14 +151,12 @@ def test_register_pdf_markdown_uses_pageindex_extracted_text_for_metadata_and_ft
 
         filesystem.register_file(
             storage_uri=source_pdf.as_uri(),
-            source_path="docs/report.pdf",
             external_id="dsid_pdf_extracted",
             title="PDF extracted",
             content="CALLER PDF CONTENT MUST NOT REACH GENERATOR",
         )
         filesystem.register_file(
             storage_uri=source_md.as_uri(),
-            source_path="docs/notes.md",
             external_id="dsid_md_extracted",
             title="Markdown extracted",
             content="CALLER MD CONTENT MUST NOT REACH GENERATOR",
@@ -167,8 +164,12 @@ def test_register_pdf_markdown_uses_pageindex_extracted_text_for_metadata_and_ft
 
         pdf_request = generator.calls[0][0]
         md_request = generator.calls[1][0]
-        pdf_stat = filesystem.store.file_info("dsid_pdf_extracted")
-        md_stat = filesystem.store.file_info("dsid_md_extracted")
+        pdf_entry = filesystem.store.get_file(
+            filesystem.store.resolve_file_ref("dsid_pdf_extracted")
+        )
+        md_entry = filesystem.store.get_file(
+            filesystem.store.resolve_file_ref("dsid_md_extracted")
+        )
 
         assert "PageIndex PDF extracted alpha text" in pdf_request.text
         assert "Second PageIndex PDF extracted beta text" in pdf_request.text
@@ -176,10 +177,10 @@ def test_register_pdf_markdown_uses_pageindex_extracted_text_for_metadata_and_ft
         assert "PageIndex Markdown extracted gamma text" in md_request.text
         assert "CALLER MD CONTENT" not in md_request.text
         assert "PageIndex PDF extracted alpha text" in Path(
-            pdf_stat["text_artifact_path"]
+            pdf_entry.text_artifact_path
         ).read_text(encoding="utf-8")
         assert "PageIndex Markdown extracted gamma text" in Path(
-            md_stat["text_artifact_path"]
+            md_entry.text_artifact_path
         ).read_text(encoding="utf-8")
         assert [r.external_id for r in filesystem.search("alpha beta", limit=5)] == [
             "dsid_pdf_extracted"
@@ -207,7 +208,6 @@ def test_register_text_metadata_generation_keeps_caller_content_without_pageinde
 
         filesystem.register_file(
             storage_uri="file:///tmp/readme.txt",
-            source_path="docs/readme.txt",
             external_id="dsid_text_generation",
             title="Text generation",
             content="Plain text caller content stays authoritative.",
@@ -215,11 +215,14 @@ def test_register_text_metadata_generation_keeps_caller_content_without_pageinde
         )
 
         stat = filesystem.store.file_info("dsid_text_generation")
+        entry = filesystem.store.get_file(
+            filesystem.store.resolve_file_ref("dsid_text_generation")
+        )
 
         assert generator.calls[0][0].text == "Plain text caller content stays authoritative."
         assert stat["pageindex_doc_id"] is None
         assert stat["pageindex_tree_status"] == "not_built"
-        assert Path(stat["text_artifact_path"]).read_text(
+        assert Path(entry.text_artifact_path).read_text(
             encoding="utf-8"
         ) == "Plain text caller content stays authoritative."
 
@@ -261,14 +264,12 @@ def test_register_pdf_markdown_cache_miss_invokes_pageindex_client_index(monkeyp
 
         filesystem.register_file(
             storage_uri=str(source_pdf),
-            source_path="docs/report.pdf",
             external_id="dsid_pdf_build",
             title="PDF build",
             content="pdf text",
         )
         filesystem.register_file(
             storage_uri=source_md.as_uri(),
-            source_path="docs/notes.md",
             external_id="dsid_md_build",
             title="Markdown build",
             content=source_md.read_text(encoding="utf-8"),
@@ -332,7 +333,6 @@ def test_cat_structure_page_reuses_pageindex_client_cache_without_indexing(monke
         monkeypatch.setattr(PageIndexClient, "index", fail_index)
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path="docs/report.pdf",
             external_id="dsid_structural_cached",
             title="Cached structural report",
             content="text artifact remains available for grep, not cat --all",
@@ -370,7 +370,6 @@ def test_cat_node_is_not_supported():
         filesystem = PageIndexFileSystem(workspace=Path(tmp) / "workspace")
         filesystem.register_file(
             storage_uri="file:///tmp/notes.md",
-            source_path="docs/notes.md",
             external_id="dsid_md_cached",
             title="Cached markdown notes",
             content="# Notes\n\nBody",
@@ -419,7 +418,6 @@ def test_cat_structure_page_and_text_outputs_are_hard_limited():
         )
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path="docs/report.pdf",
             external_id="dsid_limited_pdf",
             title="Limited structural report",
             content="text artifact remains available for grep",
@@ -427,7 +425,6 @@ def test_cat_structure_page_and_text_outputs_are_hard_limited():
         text_content = "\n".join(f"line {index}" for index in range(1, 106))
         filesystem.register_file(
             storage_uri="file:///tmp/long.txt",
-            source_path="docs/long.txt",
             external_id="dsid_long_text",
             title="Long text",
             content=text_content,
@@ -474,7 +471,6 @@ def test_tree_folder_behavior_is_preserved():
         filesystem = PageIndexFileSystem(workspace=Path(tmp) / "workspace")
         filesystem.register_file(
             storage_uri="file:///tmp/report.txt",
-            source_path="docs/report.txt",
             folder_path="/docs/reports",
             external_id="dsid_folder_tree",
             title="Folder report",
@@ -514,7 +510,6 @@ def test_tree_does_not_read_file_internal_pageindex_structure():
         )
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path="docs/report.pdf",
             external_id="dsid_tree_is_folder_only",
             title="Cached structural report",
             content="text artifact remains available",
@@ -536,28 +531,24 @@ def test_cat_all_is_limited_to_text_files():
         filesystem = PageIndexFileSystem(workspace=Path(tmp) / "workspace")
         filesystem.register_file(
             storage_uri="file:///tmp/readme.txt",
-            source_path="docs/readme.txt",
             external_id="dsid_text_file",
             title="Text readme",
             content="plain text body",
         )
         filesystem.register_file(
             storage_uri="file:///tmp/report.pdf",
-            source_path="docs/report.pdf",
             external_id="dsid_pdf_file",
             title="PDF report",
             content="extracted text should not be served through cat --all",
         )
         filesystem.register_file(
             storage_uri="file:///tmp/notes.md",
-            source_path="docs/notes.md",
             external_id="dsid_md_file",
             title="Markdown notes",
             content="markdown text should use PageIndex structure reads",
         )
         filesystem.register_file(
             storage_uri="file:///tmp/data.json",
-            source_path="docs/data.json",
             external_id="dsid_json_file",
             title="JSON record",
             content='{"body":"json"}',
@@ -589,7 +580,6 @@ def test_pageindex_structure_commands_are_limited_to_pdf_and_markdown():
         filesystem = PageIndexFileSystem(workspace=Path(tmp) / "workspace")
         filesystem.register_file(
             storage_uri="file:///tmp/readme.txt",
-            source_path="docs/readme.txt",
             external_id="dsid_text_only",
             title="Text readme",
             content="plain text body",
@@ -617,7 +607,6 @@ def test_existing_pageindex_status_allows_legacy_record_without_format_suffix():
         filesystem = PageIndexFileSystem(workspace=Path(tmp) / "workspace")
         file_ref = filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path="uploads/uploaded",
             external_id="dsid_legacy_pageindex",
             title="Legacy PageIndex record",
             content="text/plain is only a weak default here",
@@ -665,7 +654,6 @@ def test_read_commands_do_not_link_pageindex_cache_when_pointer_is_missing(monke
         monkeypatch.setattr(PageIndexClient, "index", fail_index)
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path="docs/late.md",
             external_id="dsid_late_cache",
             title="Late cache",
             content=source.read_text(encoding="utf-8"),

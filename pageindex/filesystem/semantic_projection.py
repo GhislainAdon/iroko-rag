@@ -39,7 +39,6 @@ class SemanticProjectionCandidate:
     score: float
     sources: list[dict[str, Any]]
     source_type: str
-    source_path: str
     title: str
     metadata: dict[str, Any]
     snippet: str
@@ -261,7 +260,6 @@ class SummaryProjectionIndexer:
                     text=summary,
                     external_id=record.get("external_id"),
                     source_type=str(record.get("source_type") or ""),
-                    source_path=str(record.get("source_path") or ""),
                     title=str(record.get("title") or ""),
                     metadata=metadata,
                 )
@@ -493,7 +491,6 @@ def rank_single_semantic_channel(
                 score=1 / (60 + rank),
                 sources=[{"channel": channel, "rank": rank, "distance": result.distance}],
                 source_type=result.source_type,
-                source_path=result.source_path,
                 title=result.title,
                 metadata=result.metadata,
                 snippet=f"{channel}_vector rank={rank}",

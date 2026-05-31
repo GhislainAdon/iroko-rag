@@ -24,7 +24,6 @@ def _register_find_fixture(tmp_path: Path):
         source.write_text(f"{title} fixture text", encoding="utf-8")
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path=f"docs/{filename}",
             folder_path=folder_path,
             external_id=external_id,
             title=title,
@@ -145,7 +144,6 @@ def test_stat_shell_output_includes_unified_metadata_status(tmp_path):
     )
     filesystem.register_file(
         storage_uri=source.as_uri(),
-        source_path="docs/source.txt",
         folder_path="/documents",
         external_id="doc_generated",
         title="Generated metadata document",
@@ -196,7 +194,6 @@ def test_stat_field_reads_one_metadata_field_across_multiple_targets(tmp_path):
         source.write_text(f"fixture text {index}", encoding="utf-8")
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path=f"docs/source{index}.txt",
             folder_path="/documents",
             external_id=f"doc_summary_{index}",
             title=f"Summary document {index}",
@@ -249,7 +246,6 @@ def test_stat_field_rejects_more_than_twenty_targets(tmp_path):
         source.write_text(f"fixture text {index}", encoding="utf-8")
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path=f"docs/source{index}.txt",
             folder_path="/documents",
             external_id=f"doc_{index}",
             title=f"Document {index}",
@@ -273,7 +269,6 @@ def test_register_rejects_pifs_owned_metadata_fields(tmp_path):
     with pytest.raises(ValueError, match="PIFS-owned generated field"):
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path="docs/source.txt",
             folder_path="/documents",
             external_id="doc_conflict",
             title="Conflict document",
@@ -299,7 +294,6 @@ def test_batch_metadata_status_generates_into_unified_metadata(tmp_path):
     )
     file_ref = filesystem.register_file(
         storage_uri=source.as_uri(),
-        source_path="docs/source.txt",
         folder_path="/documents",
         external_id="doc_batch",
         title="Batch document",

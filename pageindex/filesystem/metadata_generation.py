@@ -18,7 +18,6 @@ class MetadataGenerationInput:
     file_ref: str
     external_id: str | None
     title: str
-    source_path: str
     content_type: str
     source_type: str | None
     text: str

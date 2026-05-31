@@ -40,7 +40,6 @@ def test_register_insert_failure_cleans_owned_artifacts_and_skips_projection(
     with pytest.raises(RuntimeError, match="catalog insert failed"):
         filesystem.register_file(
             storage_uri=source.as_uri(),
-            source_path="docs/source.txt",
             folder_path="/documents",
             external_id="doc_insert_failure",
             title="Insert failure",

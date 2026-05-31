@@ -21,7 +21,6 @@ class SemanticIndexRecord:
     text: str
     external_id: str | None = None
     source_type: str = ""
-    source_path: str = ""
     title: str = ""
     metadata: dict[str, Any] | None = None
 
@@ -32,7 +31,6 @@ class SemanticSearchResult:
     distance: float
     external_id: str | None
     source_type: str
-    source_path: str
     title: str
     text_hash: str
     metadata: dict[str, Any]
@@ -88,7 +86,6 @@ class SQLiteVecSemanticIndex:
                     file_ref TEXT NOT NULL UNIQUE,
                     external_id TEXT,
                     source_type TEXT NOT NULL DEFAULT '',
-                    source_path TEXT NOT NULL DEFAULT '',
                     title TEXT NOT NULL DEFAULT '',
                     text_hash TEXT NOT NULL,
                     text_chars INTEGER NOT NULL DEFAULT 0,
@@ -215,7 +212,6 @@ class SQLiteVecSemanticIndex:
                                 d.file_ref,
                                 d.external_id,
                                 d.source_type,
-                                d.source_path,
                                 d.title,
                                 d.text_hash,
                                 d.metadata_json,
@@ -245,7 +241,6 @@ class SQLiteVecSemanticIndex:
                         d.file_ref,
                         d.external_id,
                         d.source_type,
-                        d.source_path,
                         d.title,
                         d.text_hash,
                         d.metadata_json,
@@ -269,7 +264,6 @@ class SQLiteVecSemanticIndex:
                     distance=float(row["distance"]),
                     external_id=row["external_id"],
                     source_type=row["source_type"],
-                    source_path=row["source_path"],
                     title=row["title"],
                     text_hash=row["text_hash"],
                     metadata=metadata,
@@ -361,15 +355,14 @@ class SQLiteVecSemanticIndex:
             cursor = conn.execute(
                 """
                 INSERT INTO semantic_index_docs(
-                    file_ref, external_id, source_type, source_path, title,
+                    file_ref, external_id, source_type, title,
                     text_hash, text_chars, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.file_ref,
                     record.external_id,
                     record.source_type,
-                    record.source_path,
                     record.title,
                     text_hash,
                     len(record.text),
@@ -381,10 +374,9 @@ class SQLiteVecSemanticIndex:
         conn.execute(
             """
             UPDATE semantic_index_docs
-            SET external_id = ?,
-                source_type = ?,
-                source_path = ?,
-                title = ?,
+                SET external_id = ?,
+                    source_type = ?,
+                    title = ?,
                 text_hash = ?,
                 text_chars = ?,
                 metadata_json = ?,
@@ -394,7 +386,6 @@ class SQLiteVecSemanticIndex:
             (
                 record.external_id,
                 record.source_type,
-                record.source_path,
                 record.title,
                 text_hash,
                 len(record.text),

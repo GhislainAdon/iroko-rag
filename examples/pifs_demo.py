@@ -48,7 +48,7 @@ from pageindex.filesystem.core import DEFAULT_EMBEDDING_DIMENSIONS
 EXAMPLES_DIR = Path(__file__).parent
 DOCUMENTS_DIR = EXAMPLES_DIR / "documents"
 WORKSPACE = EXAMPLES_DIR / "pifs_workspace"
-DEFAULT_MODEL = os.environ.get("PIFS_DEMO_MODEL", "gpt-5.4-mini")
+DEFAULT_MODEL = os.environ.get("PIFS_DEMO_MODEL", "gpt-5.4")
 DEFAULT_METADATA_PROVIDER = os.environ.get("PIFS_DEMO_METADATA_PROVIDER") or os.environ.get(
     "PIFS_METADATA_PROVIDER", "openai"
 )
@@ -416,7 +416,6 @@ def register_documents(
         register_started = time.perf_counter()
         file_ref = filesystem.register(
             storage_uri=document_path.as_uri(),
-            source_path=str(document_path),
             folder_path="/documents",
             external_id=external_id,
             title=document_path.name,

@@ -135,7 +135,6 @@ def _register_browse_file(
     filesystem.metadata_generator = SummaryGenerator()
     return filesystem.register_file(
         storage_uri=f"file:///tmp/{external_id}.txt",
-        source_path=f"documents/{external_id}.txt",
         folder_path=folder_path,
         external_id=external_id,
         title=f"{external_id}.txt",
@@ -427,7 +426,7 @@ def test_browse_shell_output_uses_fixed_blocks_with_pagination_command(tmp_path)
     assert "score:" not in rendered
 
 
-def test_browse_shell_path_falls_back_to_unique_locator_when_source_collides(tmp_path):
+def test_browse_shell_path_uses_virtual_locator_when_source_collides(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult
 
@@ -443,7 +442,6 @@ def test_browse_shell_path_falls_back_to_unique_locator_when_source_collides(tmp
     )
     first_ref = filesystem.register_file(
         storage_uri="file:///tmp/first.json",
-        source_path="shared/source.json",
         folder_path="/documents",
         external_id="dsid_first",
         title="First",
@@ -459,7 +457,6 @@ def test_browse_shell_path_falls_back_to_unique_locator_when_source_collides(tmp
     )
     filesystem.register_file(
         storage_uri="file:///tmp/second.json",
-        source_path="shared/source.json",
         folder_path="/documents",
         external_id="dsid_second",
         title="Second",
@@ -478,11 +475,50 @@ def test_browse_shell_path_falls_back_to_unique_locator_when_source_collides(tmp
 
     rendered = executor.execute('browse /documents "first"')
 
-    assert "path: dsid_first" in rendered
+    assert "path: /documents/First" in rendered
     assert "path: /shared/source.json" not in rendered
-    assert filesystem.store.resolve_file_ref("dsid_first") == first_ref
-    with pytest.raises(KeyError, match="Ambiguous file target"):
+    assert filesystem.store.resolve_file_ref("/documents/First") == first_ref
+    with pytest.raises(KeyError, match="Unknown file target"):
         filesystem.store.resolve_file_ref("/shared/source.json")
+
+
+def test_browse_shell_path_never_returns_storage_uri_path(tmp_path):
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+    from pageindex.filesystem.metadata_generation import MetadataGenerationResult
+
+    class SummaryGenerator:
+        def generate(self, document, *, fields):
+            return MetadataGenerationResult(
+                values={"summary": "summary for physical source report"}
+            )
+
+    filesystem = PageIndexFileSystem(
+        workspace=tmp_path / "workspace",
+        metadata_generator=SummaryGenerator(),
+    )
+    file_ref = filesystem.register_file(
+        storage_uri="file:///Users/chengjie/Downloads/source/report.pdf",
+        folder_path="/documents/reports",
+        external_id="dsid_report",
+        title="report.pdf",
+        content="physical source report content",
+        metadata_policy={
+            "fields": {
+                "summary": True,
+                "doc_type": False,
+                "domain": False,
+                "topic": False,
+            }
+        },
+    )
+    filesystem.semantic_retrieval_backend = BrowseBackend(["dsid_report"])
+    executor = PIFSCommandExecutor(filesystem)
+
+    rendered = executor.execute('browse /documents/reports "physical source"')
+
+    assert "path: /documents/reports/report.pdf" in rendered
+    assert "/Users/chengjie/Downloads" not in rendered
+    assert filesystem.store.resolve_file_ref("/documents/reports/report.pdf") == file_ref
 
 
 def test_browse_scope_keeps_ordinary_folders_out_of_source_type_filters(tmp_path):
@@ -501,7 +537,6 @@ def test_browse_scope_keeps_ordinary_folders_out_of_source_type_filters(tmp_path
     )
     file_ref = filesystem.register_file(
         storage_uri="file:///tmp/report.pdf",
-        source_path="examples/documents/report.pdf",
         folder_path="/documents",
         external_id="dsid_report",
         title="report.pdf",
@@ -525,14 +560,13 @@ def test_browse_scope_keeps_ordinary_folders_out_of_source_type_filters(tmp_path
     )
 
     assert "source_type" not in backend.calls[0][2]
-    assert "source_path" not in backend.calls[0][2]
-    assert result["data"]["data"][0]["path"] == "/examples/documents/report.pdf"
+    assert result["data"]["data"][0]["path"] == "/documents/report.pdf"
     assert result["data"]["data"][0]["summary"] == "Federal Reserve annual report summary"
     assert filesystem.store.resolve_file_ref(result["data"]["data"][0]["path"]) == file_ref
 
 
-def test_browse_path_is_unique_source_target_when_titles_collide(tmp_path):
-    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+def test_register_file_rejects_duplicate_title_in_folder(tmp_path):
+    from pageindex.filesystem import PageIndexFileSystem
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult
 
     class SummaryGenerator:
@@ -545,9 +579,8 @@ def test_browse_path_is_unique_source_target_when_titles_collide(tmp_path):
         workspace=tmp_path / "workspace",
         metadata_generator=SummaryGenerator(),
     )
-    first_ref = filesystem.register_file(
+    filesystem.register_file(
         storage_uri="file:///tmp/first.json",
-        source_path="slack/dsid_first.json",
         folder_path="/documents",
         external_id="dsid_first",
         title="announcements",
@@ -561,34 +594,25 @@ def test_browse_path_is_unique_source_target_when_titles_collide(tmp_path):
             }
         },
     )
-    filesystem.register_file(
-        storage_uri="file:///tmp/second.json",
-        source_path="slack/dsid_second.json",
-        folder_path="/documents",
-        external_id="dsid_second",
-        title="announcements",
-        content="second announcement mentions unrelated maintenance.",
-        metadata_policy={
-            "fields": {
-                "summary": True,
-                "doc_type": False,
-                "domain": False,
-                "topic": False,
-            }
-        },
-    )
-    filesystem.semantic_retrieval_backend = SummaryBackend("dsid_first")
-    executor = PIFSCommandExecutor(filesystem, json_output=True)
-
-    result = json.loads(executor.execute('browse /documents "H200 reservations"'))
-
-    assert result["data"]["data"][0]["path"] == "/slack/dsid_first.json"
-    assert filesystem.store.resolve_file_ref(result["data"]["data"][0]["path"]) == first_ref
-    with pytest.raises(KeyError, match="Ambiguous file target"):
-        filesystem.store.resolve_file_ref("/documents/announcements")
+    with pytest.raises(FileExistsError, match="File already exists at /documents/announcements"):
+        filesystem.register_file(
+            storage_uri="file:///tmp/second.json",
+            folder_path="/documents",
+            external_id="dsid_second",
+            title="announcements",
+            content="second announcement mentions unrelated maintenance.",
+            metadata_policy={
+                "fields": {
+                    "summary": True,
+                    "doc_type": False,
+                    "domain": False,
+                    "topic": False,
+                }
+            },
+        )
 
 
-def test_browse_path_falls_back_when_source_target_is_ambiguous(tmp_path):
+def test_browse_path_uses_virtual_title_when_storage_paths_are_unrelated(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult
 
@@ -604,7 +628,6 @@ def test_browse_path_falls_back_when_source_target_is_ambiguous(tmp_path):
     )
     first_ref = filesystem.register_file(
         storage_uri="file:///tmp/first.json",
-        source_path="shared/source.json",
         folder_path="/documents",
         external_id="dsid_first",
         title="First",
@@ -620,7 +643,6 @@ def test_browse_path_falls_back_when_source_target_is_ambiguous(tmp_path):
     )
     filesystem.register_file(
         storage_uri="file:///tmp/second.json",
-        source_path="shared/source.json",
         folder_path="/documents",
         external_id="dsid_second",
         title="Second",
@@ -639,7 +661,7 @@ def test_browse_path_falls_back_when_source_target_is_ambiguous(tmp_path):
 
     result = json.loads(executor.execute('browse /documents "first"'))
 
-    assert result["data"]["data"][0]["path"] == "dsid_first"
+    assert result["data"]["data"][0]["path"] == "/documents/First"
     assert filesystem.store.resolve_file_ref(result["data"]["data"][0]["path"]) == first_ref
 
 
@@ -663,7 +685,6 @@ def test_old_semantic_commands_are_unsupported_even_when_indexes_exist(tmp_path)
     )
     filesystem.register_file(
         storage_uri="file:///tmp/market-note.pdf",
-        source_path="examples/documents/market-note.pdf",
         folder_path="/documents",
         external_id="dsid_market_note",
         title="market-note.pdf",
@@ -695,13 +716,13 @@ def test_old_semantic_commands_are_unsupported_even_when_indexes_exist(tmp_path)
         executor.execute('browse /documents "Federal Reserve" --space entity')
     )
     assert entity["data"]["data"][0]["summary"] == "Risk and compliance summary"
-    assert entity["data"]["data"][0]["path"] == "/examples/documents/market-note.pdf"
+    assert entity["data"]["data"][0]["path"] == "/documents/market-note.pdf"
 
     relation = json.loads(
         executor.execute('browse /documents "Disney valuation" --space relation')
     )
     assert relation["data"]["data"][0]["summary"] == "Risk and compliance summary"
-    assert relation["data"]["data"][0]["path"] == "/examples/documents/market-note.pdf"
+    assert relation["data"]["data"][0]["path"] == "/documents/market-note.pdf"
 
 
 def test_find_name_is_lexical_and_find_relation_is_not_semantic_alias(tmp_path):
@@ -711,7 +732,6 @@ def test_find_name_is_lexical_and_find_relation_is_not_semantic_alias(tmp_path):
     filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
     filesystem.register_file(
         storage_uri="file:///tmp/report.pdf",
-        source_path="examples/documents/report.pdf",
         folder_path="/documents",
         external_id="dsid_report",
         title="Annual report",
@@ -755,7 +775,7 @@ def test_broad_recursive_grep_suggests_browse_not_removed_semantic_commands(tmp_
     assert "semantic-grep" not in rendered
 
 
-def test_grep_source_file_requires_terms_on_same_line(tmp_path):
+def test_grep_file_requires_terms_on_same_line(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
 
     source_dir = tmp_path / "source" / "documents"
@@ -769,11 +789,10 @@ def test_grep_source_file_requires_terms_on_same_line(tmp_path):
     filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
     filesystem.register_file(
         storage_uri=str(source),
-        source_path="documents/split.json",
         folder_path="/documents",
         external_id="doc_split_terms",
         title="Split source terms",
-        content="registered artifact without the searched tokens",
+        content=source.read_text(encoding="utf-8"),
     )
     executor = PIFSCommandExecutor(filesystem, json_output=True)
 
@@ -813,7 +832,6 @@ def test_existing_summary_projection_index_uses_current_config_when_dimensions_m
                 file_ref="file_a",
                 external_id="doc_a",
                 source_type="documents",
-                source_path="documents/a.pdf",
                 title="A",
                 text="summary",
                 vector=[1.0, 0.0, 0.0],
@@ -879,7 +897,6 @@ def test_existing_summary_projection_index_dimension_mismatch_rejects_retrieval(
                 file_ref="file_a",
                 external_id="doc_a",
                 source_type="documents",
-                source_path="documents/a.pdf",
                 title="A",
                 text="summary",
                 vector=[1.0, 0.0, 0.0],
@@ -948,7 +965,6 @@ def test_browse_semantic_files_uses_summary_projection_when_only_summary_availab
     )
     filesystem.register_file(
         storage_uri=source.as_uri(),
-        source_path="docs/source.txt",
         folder_path="/documents",
         external_id="doc_summary_only",
         title="Operations note",

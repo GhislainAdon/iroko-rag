@@ -80,12 +80,13 @@ def test_add_text_folder_target_copies_artifact_indexes_summary_and_is_readable(
 
     info = filesystem.add_file(str(source), "/documents/reports")
 
-    assert info["source_path"] == "documents/reports/filing.txt"
+    assert info["path"] == "/documents/reports/filing.txt"
     assert info["folder_path"] == "/documents/reports"
     assert filesystem.folder_info("/documents/reports")["path"] == "/documents/reports"
-    assert info["storage_uri"] != source.as_uri()
-    assert "/artifacts/uploads/" in info["storage_uri"]
-    copied_path = Path(info["storage_uri"].removeprefix("file://"))
+    entry = filesystem.store.get_file(info["file_ref"])
+    assert entry.storage_uri != source.as_uri()
+    assert "/artifacts/uploads/" in entry.storage_uri
+    copied_path = Path(entry.storage_uri.removeprefix("file://"))
     assert copied_path.read_text(encoding="utf-8") == "alpha filing text for pifs add"
     assert copied_path.resolve() != source.resolve()
 
@@ -164,7 +165,7 @@ def test_add_configures_semantic_retrieval_in_same_filesystem_instance(tmp_path)
         recursive=True,
         page_size=5,
     )
-    assert [item["source_path"] for item in results["data"]] == ["documents/semantic.txt"]
+    assert [item["path"] for item in results["data"]] == ["/documents/semantic.txt"]
 
 
 def test_add_markdown_builds_pageindex_tree_from_copied_artifact(tmp_path, monkeypatch):
@@ -205,10 +206,11 @@ def test_add_markdown_builds_pageindex_tree_from_copied_artifact(tmp_path, monke
     info = filesystem.add_file(source, "/documents")
     executor = PIFSCommandExecutor(filesystem, json_output=True)
     structure = json.loads(executor.execute("cat /documents/notes.md --structure"))
+    entry = filesystem.store.get_file(info["file_ref"])
 
     assert structure["data"]["available"] is True
     assert structure["data"]["structure"][0]["title"] == "Notes"
-    assert indexed_paths == [Path(info["storage_uri"].removeprefix("file://"))]
+    assert indexed_paths == [Path(entry.storage_uri.removeprefix("file://"))]
     assert indexed_paths[0].resolve() != source.resolve()
 
 
@@ -469,8 +471,6 @@ def test_cli_add_uses_workspace_and_prints_added_file(monkeypatch, capsys, tmp_p
             return {
                 "file_ref": "file_cli",
                 "path": "/documents/cli.txt",
-                "source_path": "documents/cli.txt",
-                "storage_uri": "file:///workspace/artifacts/uploads/file_cli/cli.txt",
             }
 
     monkeypatch.setattr(cli, "PageIndexFileSystem", FakeAddFileSystem)
@@ -482,5 +482,4 @@ def test_cli_add_uses_workspace_and_prints_added_file(monkeypatch, capsys, tmp_p
     assert capsys.readouterr().out == (
         "added: /documents/cli.txt\n"
         "file_ref: file_cli\n"
-        "storage_uri: file:///workspace/artifacts/uploads/file_cli/cli.txt\n"
     )

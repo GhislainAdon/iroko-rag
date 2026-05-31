@@ -20,7 +20,6 @@ def test_metadata_generator_uses_provider_parameter():
         file_ref="file_a",
         external_id="doc_a",
         title="A",
-        source_path="docs/a.txt",
         content_type="text/plain",
         source_type=None,
         text="hello",

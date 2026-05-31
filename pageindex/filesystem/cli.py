@@ -21,7 +21,7 @@ from .core import PageIndexFileSystem
 
 
 AGENT_STREAM_MODE_CHOICES = ("off", "tools", "model", "all")
-DEFAULT_AGENT_MODEL = "gpt-5.4-mini"
+DEFAULT_AGENT_MODEL = "gpt-5.4"
 EXIT_COMMANDS = {"exit", "quit", ":q"}
 ANSI_ESCAPE_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|.)")
 PIFS_CONFIG_FILE_ENV = "PIFS_CONFIG_FILE"
@@ -290,9 +290,8 @@ def _run_add(argv: list[str], *, workspace: str) -> int:
 
     filesystem = _filesystem_from_workspace(workspace)
     info = filesystem.add_file(args.physical_path, args.virtual_target)
-    print(f"added: {info.get('path') or '/' + str(info.get('source_path') or '').strip('/')}")
+    print(f"added: {info.get('path')}")
     print(f"file_ref: {info['file_ref']}")
-    print(f"storage_uri: {info['storage_uri']}")
     return 0
 
 

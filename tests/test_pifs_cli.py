@@ -76,7 +76,6 @@ def test_cli_workspace_surfaces_projection_dimension_mismatch(tmp_path):
                 file_ref="file_a",
                 external_id="doc_a",
                 source_type="documents",
-                source_path="documents/a.pdf",
                 title="A",
                 text="summary",
                 vector=[1.0, 0.0, 0.0],
@@ -224,6 +223,28 @@ def test_cli_ask_invokes_agent_with_question(monkeypatch, capsys, tmp_path):
         "reasoning_effort": "low",
         "reasoning_summary": "concise",
     }
+
+
+def test_cli_ask_defaults_to_global_agent_model(monkeypatch, capsys, tmp_path):
+    from pageindex.filesystem import cli
+
+    workspace = tmp_path / "workspace"
+    agent_calls = []
+    monkeypatch.delenv("PIFS_AGENT_MODEL", raising=False)
+    monkeypatch.delenv("PIFS_MODEL", raising=False)
+
+    def fake_run_pifs_agent(filesystem, question, **kwargs):
+        agent_calls.append(kwargs)
+        return "agent answer"
+
+    monkeypatch.setattr(cli, "PageIndexFileSystem", FakeFileSystem)
+    monkeypatch.setattr(cli, "run_pifs_agent", fake_run_pifs_agent)
+
+    status = cli.main(["ask", "--workspace", str(workspace), "What?"])
+
+    assert status == 0
+    assert capsys.readouterr().out == "agent answer\n"
+    assert agent_calls[0]["model"] == "gpt-5.4"
 
 
 def test_cli_ask_loads_env_file_before_running_agent(monkeypatch, capsys, tmp_path):

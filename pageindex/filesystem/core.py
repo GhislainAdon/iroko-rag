@@ -144,13 +144,12 @@ class PageIndexFileSystem:
         self,
         *,
         storage_uri: str,
-        source_path: str,
         folder_path: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
         external_id: Optional[str] = None,
         title: Optional[str] = None,
         content: str = "",
-        content_type: str = "text/plain",
+        content_type: str | None = None,
         source_type: Optional[str] = None,
         metadata_policy: Optional[dict[str, Any]] = None,
         metadata_status: Optional[str] = None,
@@ -159,7 +158,6 @@ class PageIndexFileSystem:
             [
                 {
                     "storage_uri": storage_uri,
-                    "source_path": source_path,
                     "folder_path": folder_path,
                     "metadata": metadata,
                     "external_id": external_id,
@@ -231,7 +229,6 @@ class PageIndexFileSystem:
                 record = self._prepare_file_record(
                     {
                         "storage_uri": final_path.as_uri(),
-                        "source_path": virtual_path.strip("/"),
                         "folder_path": folder_path,
                         "metadata": {},
                         "external_id": None,
@@ -604,23 +601,27 @@ class PageIndexFileSystem:
                 folder["path"]
                 for folder in self.store.folder_memberships(file_ref)
             ]
+            folder_path = self._preferred_folder_path(
+                folder_paths,
+                path,
+                entry.folder_path,
+            )
             rank = len(rows) + 1
             rows.append(
                 {
                     "rank": rank,
                     "similarity": self._semantic_candidate_similarity(candidate),
                     "score": self._semantic_candidate_score(candidate),
-                    "path": self._stable_file_locator(file_ref, entry),
+                    "path": self._stable_file_locator(
+                        file_ref,
+                        entry,
+                        folder_path=folder_path,
+                    ),
                     "file_ref": file_ref,
                     "document_id": entry.external_id,
                     "external_id": entry.external_id,
                     "title": entry.title,
-                    "source_path": entry.source_path,
-                    "folder_path": self._preferred_folder_path(
-                        folder_paths,
-                        path,
-                        entry.folder_path,
-                    ),
+                    "folder_path": folder_path,
                     "folder_paths": folder_paths,
                     "summary": str((entry.metadata or {}).get("summary") or ""),
                     "snippet": str(getattr(candidate, "snippet", "") or entry.descriptor),
@@ -724,7 +725,6 @@ class PageIndexFileSystem:
                     folder_paths=folder_paths,
                     metadata=row["metadata"],
                     metadata_status=row["metadata_status"],
-                    source_path=row["source_path"],
                     id=row["id"],
                     document_id=row["document_id"],
                     name=row["name"],
@@ -845,7 +845,6 @@ class PageIndexFileSystem:
             "mode": "structure",
             "file_ref": file_ref,
             "external_id": entry.external_id,
-            "source_path": entry.source_path,
             "status": entry.pageindex_tree_status,
             "available": True,
             "pageindex_doc_id": doc_id,
@@ -887,7 +886,6 @@ class PageIndexFileSystem:
             "mode": "page",
             "file_ref": file_ref,
             "external_id": entry.external_id,
-            "source_path": entry.source_path,
             "status": entry.pageindex_tree_status,
             "available": True,
             "pageindex_doc_id": doc_id,
@@ -905,7 +903,7 @@ class PageIndexFileSystem:
             return
         raise ValueError(
             f"{command} is only supported for txt/text files; "
-            f"got source_path={entry.source_path!r}, content_type={entry.content_type!r}. "
+            f"got title={entry.title!r}, content_type={entry.content_type!r}. "
             "Use cat <path|file_ref|document_id> --structure, "
             "or cat <path|file_ref|document_id> --page for PDF/Markdown PageIndex files."
         )
@@ -915,29 +913,22 @@ class PageIndexFileSystem:
             return
         raise ValueError(
             f"{command} is only supported for PDF/Markdown PageIndex files; "
-            f"got source_path={entry.source_path!r}, content_type={entry.content_type!r}. "
+            f"got title={entry.title!r}, content_type={entry.content_type!r}. "
             "Use cat <path|file_ref|document_id> --all for txt/text files."
         )
 
     @classmethod
     def _file_format(cls, entry: Any) -> str:
-        suffix = Path(str(entry.source_path or "")).suffix.lower()
-        content_type = cls._normalized_content_type(entry.content_type)
-        if suffix == ".pdf" or content_type == "application/pdf":
-            return "pdf"
-        if suffix in PAGEINDEX_DOCUMENT_SUFFIXES or content_type in PAGEINDEX_DOCUMENT_CONTENT_TYPES:
-            return "markdown"
-        if suffix in TEXT_ARTIFACT_SUFFIXES:
-            return "text"
-        if entry.pageindex_doc_id or entry.pageindex_tree_status != "not_built":
+        if getattr(entry, "pageindex_doc_id", None) or entry.pageindex_tree_status != "not_built":
             return "pageindex"
-        if content_type in TEXT_ARTIFACT_CONTENT_TYPES:
-            return "text"
+        file_format = cls._content_format(getattr(entry, "title", ""), entry.content_type)
+        if file_format != "unsupported":
+            return file_format
         return "unsupported"
 
     @classmethod
-    def _source_format(cls, source_path: Any, content_type: str | None) -> str:
-        suffix = Path(str(source_path or "")).suffix.lower()
+    def _content_format(cls, filename: Any, content_type: str | None) -> str:
+        suffix = Path(str(filename or "")).suffix.lower()
         normalized_content_type = cls._normalized_content_type(content_type)
         if suffix == ".pdf" or normalized_content_type == "application/pdf":
             return "pdf"
@@ -977,27 +968,27 @@ class PageIndexFileSystem:
         self,
         *,
         storage_uri: str,
-        source_path: str,
+        title: str,
         content_type: str,
     ) -> tuple[str | None, str, dict[str, Any] | None]:
-        if self._source_format(source_path, content_type) not in {"pdf", "markdown"}:
+        if self._content_format(title, content_type) not in {"pdf", "markdown"}:
             return None, "not_built", None
         client = self._pageindex_client()
-        source = self._canonical_source_path(storage_uri=storage_uri, source_path=source_path)
-        cached_doc_id = self._find_cached_pageindex_doc_id(client, source)
+        local_path = self._canonical_storage_uri_path(storage_uri)
+        cached_doc_id = self._find_cached_pageindex_doc_id(client, local_path)
         if cached_doc_id:
             return cached_doc_id, "built", None
-        if source is None:
+        if local_path is None:
             return None, "failed", self._pageindex_tree_failure_record(
                 source="PageIndexFileSystem.registration",
-                error_type="UnresolvableSourcePath",
+                error_type="UnresolvableStorageUri",
                 message=(
-                    "PageIndex source path must resolve to a local file path for "
+                    "storage_uri must resolve to a local file path for "
                     "PDF/Markdown registration."
                 ),
             )
         try:
-            doc_id = client.index(source)
+            doc_id = client.index(local_path)
             return doc_id, "built", None
         except Exception as exc:
             return None, "failed", self._pageindex_tree_failure_record(
@@ -1024,24 +1015,40 @@ class PageIndexFileSystem:
     def _find_cached_pageindex_doc_id(
         self,
         client: PageIndexClient,
-        source_path: str | None,
+        local_path: str | None,
     ) -> str | None:
-        if source_path is None:
+        if local_path is None:
             return None
         for doc_id, doc in client.documents.items():
-            if self._canonical_path(doc.get("path")) == source_path:
+            if self._canonical_path(doc.get("path")) == local_path:
                 return doc_id
         return None
 
-    def _canonical_source_path(self, *, storage_uri: str, source_path: str) -> str | None:
+    def _canonical_storage_uri_path(self, storage_uri: str) -> str | None:
         parsed = urlparse(storage_uri)
         if parsed.scheme == "file":
             return self._canonical_path(unquote(parsed.path))
         if storage_uri and not parsed.scheme:
             return self._canonical_path(storage_uri)
-        if Path(source_path).expanduser().is_absolute():
-            return self._canonical_path(source_path)
         return None
+
+    @staticmethod
+    def _title_from_storage_uri(storage_uri: str) -> str:
+        parsed = urlparse(str(storage_uri or ""))
+        path = unquote(parsed.path) if parsed.scheme else str(storage_uri or "")
+        return Path(path).name
+
+    @classmethod
+    def _infer_content_type(cls, *, title: str, storage_uri: str) -> str:
+        for filename in (title, cls._title_from_storage_uri(storage_uri)):
+            suffix = Path(str(filename or "")).suffix.lower()
+            if suffix == ".pdf":
+                return "application/pdf"
+            if suffix in PAGEINDEX_DOCUMENT_SUFFIXES:
+                return "text/markdown"
+            if suffix in TEXT_ARTIFACT_SUFFIXES:
+                return "text/plain"
+        return "text/plain"
 
     @staticmethod
     def _canonical_path(path: Any) -> str | None:
@@ -1124,12 +1131,12 @@ class PageIndexFileSystem:
         }
 
     def _add_file_content(self, path: Path, content_type: str) -> str:
-        if self._source_format(str(path), content_type) in {"markdown", "text"}:
+        if self._content_format(path.name, content_type) in {"markdown", "text"}:
             return path.read_text(encoding="utf-8")
         return ""
 
     def _require_add_pageindex_ready(self, record: dict[str, Any]) -> None:
-        if self._source_format(record["source_path"], record["content_type"]) not in {
+        if self._content_format(record["title"], record["content_type"]) not in {
             "pdf",
             "markdown",
         }:
@@ -1178,33 +1185,47 @@ class PageIndexFileSystem:
 
     def _prepare_file_record(self, file: dict[str, Any]) -> dict[str, Any]:
         storage_uri = file["storage_uri"]
-        raw_source_path = str(file["source_path"])
-        source_path = raw_source_path.strip("/")
         metadata = file.get("metadata") or {}
         if not isinstance(metadata, dict):
             raise ValueError("metadata must be a JSON object")
         self._validate_register_metadata(metadata)
         external_id = file.get("external_id")
         content = file.get("content") or ""
-        content_type = file.get("content_type") or "text/plain"
+        folder_path = normalize_path(file.get("folder_path") or "/")
+        title = str(
+            file.get("title")
+            or metadata.get("title")
+            or self._title_from_storage_uri(storage_uri)
+            or external_id
+            or ""
+        ).strip()
+        if not title:
+            raise ValueError("file title is required")
+        content_type = file.get("content_type") or self._infer_content_type(
+            title=title,
+            storage_uri=storage_uri,
+        )
+        file_ref = make_file_ref(
+            str(external_id or self._join_virtual_file_path(folder_path, title).strip("/"))
+        )
         (
             pageindex_doc_id,
             pageindex_tree_status,
             pageindex_tree_failure,
         ) = self._registration_pageindex_pointer(
             storage_uri=storage_uri,
-            source_path=raw_source_path,
+            title=title,
             content_type=content_type,
         )
         artifact_content = self._registration_text_artifact_content(
-            source_path=raw_source_path,
+            title=title,
             content_type=content_type,
             pageindex_doc_id=pageindex_doc_id,
             pageindex_tree_status=pageindex_tree_status,
             fallback_content=content,
         )
         fts_content = file.get("fts_content", artifact_content)
-        source_type = file.get("source_type") or self._infer_source_type(source_path)
+        source_type = file.get("source_type")
         metadata_policy = self._normalize_metadata_policy(
             file.get("metadata_policy"),
             metadata=metadata,
@@ -1217,9 +1238,6 @@ class PageIndexFileSystem:
         self._attach_pageindex_tree_failure(metadata_status, pageindex_tree_failure)
         indexed_metadata = SQLiteFileSystemStore.indexed_metadata_values(metadata)
         searchable_metadata = dict(metadata)
-        folder_path = normalize_path(file.get("folder_path") or "/")
-        title = file.get("title") or metadata.get("title") or Path(source_path).stem
-        file_ref = make_file_ref(external_id or source_path)
         text_artifact_path = file.get("text_artifact_path")
         owns_text_artifact = text_artifact_path is None
         if text_artifact_path is None:
@@ -1234,7 +1252,6 @@ class PageIndexFileSystem:
             "file_ref": file_ref,
             "external_id": external_id,
             "storage_uri": storage_uri,
-            "source_path": source_path,
             "title": title,
             "descriptor": descriptor,
             "content_type": content_type,
@@ -1260,13 +1277,13 @@ class PageIndexFileSystem:
     def _registration_text_artifact_content(
         self,
         *,
-        source_path: str,
+        title: str,
         content_type: str,
         pageindex_doc_id: str | None,
         pageindex_tree_status: str,
         fallback_content: str,
     ) -> str:
-        if self._source_format(source_path, content_type) not in {"pdf", "markdown"}:
+        if self._content_format(title, content_type) not in {"pdf", "markdown"}:
             return fallback_content
         if pageindex_tree_status != "built" or not pageindex_doc_id:
             return fallback_content
@@ -1296,15 +1313,11 @@ class PageIndexFileSystem:
     @staticmethod
     def _raw_artifact_payload(
         *,
-        storage_uri: str,
-        source_path: str,
         folder_path: str,
         metadata: dict[str, Any],
         metadata_status: dict[str, Any],
     ) -> dict[str, Any]:
         return {
-            "storage_uri": storage_uri,
-            "source_path": source_path,
             "folder_path": folder_path,
             "metadata": metadata,
             "metadata_status": metadata_status,
@@ -1323,8 +1336,6 @@ class PageIndexFileSystem:
             self.store.write_raw_artifact(
                 record["file_ref"],
                 self._raw_artifact_payload(
-                    storage_uri=record["storage_uri"],
-                    source_path=record["source_path"],
                     folder_path=record["folder_path"],
                     metadata=record["metadata"],
                     metadata_status=record["metadata_status"],
@@ -1351,7 +1362,6 @@ class PageIndexFileSystem:
             "file_ref": entry.file_ref,
             "external_id": entry.external_id,
             "storage_uri": entry.storage_uri,
-            "source_path": entry.source_path,
             "title": entry.title,
             "descriptor": entry.descriptor,
             "content_type": entry.content_type,
@@ -1394,7 +1404,6 @@ class PageIndexFileSystem:
                     file_ref=record["file_ref"],
                     external_id=record.get("external_id"),
                     title=record["title"],
-                    source_path=record["source_path"],
                     content_type=record["content_type"],
                     source_type=record.get("source_type"),
                     text=Path(record["text_artifact_path"]).read_text(encoding="utf-8"),
@@ -1638,7 +1647,6 @@ class PageIndexFileSystem:
             text=text,
             external_id=entry.external_id,
             folder_path=entry.folder_path,
-            source_path=entry.source_path,
         )
 
     def _open_all(self, file_ref: str) -> OpenResult:
@@ -1652,7 +1660,6 @@ class PageIndexFileSystem:
             text=text,
             external_id=entry.external_id,
             folder_path=entry.folder_path,
-            source_path=entry.source_path,
         )
 
     @classmethod
@@ -1671,7 +1678,6 @@ class PageIndexFileSystem:
             "mode": mode,
             "file_ref": entry.file_ref,
             "external_id": entry.external_id,
-            "source_path": entry.source_path,
             "status": entry.pageindex_tree_status,
             "available": False,
             "message": message,
@@ -1744,19 +1750,30 @@ class PageIndexFileSystem:
             separators=(",", ":"),
         )
 
-    def _stable_file_locator(self, file_ref: str, entry: Any) -> str:
-        source_path = str(getattr(entry, "source_path", "") or "").strip()
-        if source_path:
-            target = "/" + source_path.strip("/")
-            try:
-                if self.store.resolve_file_ref(target) == file_ref:
-                    return target
-            except KeyError:
-                pass
-        external_id = str(getattr(entry, "external_id", "") or "").strip()
-        if external_id:
-            return external_id
-        return file_ref
+    def _stable_file_locator(
+        self,
+        file_ref: str,
+        entry: Any,
+        *,
+        folder_path: str | None = None,
+    ) -> str:
+        folder_path = normalize_path(folder_path or getattr(entry, "folder_path", None) or "/")
+        title = str(getattr(entry, "title", "") or "").strip()
+        if not title:
+            raise RuntimeError(f"browse cannot build a virtual path for {file_ref}: missing title")
+        target = self._join_virtual_file_path(folder_path, title.strip("/"))
+        try:
+            resolved_file_ref = self.store.resolve_file_ref(target)
+        except KeyError as exc:
+            raise RuntimeError(
+                f"browse produced an unresolved virtual path for {file_ref}: {target}"
+            ) from exc
+        if resolved_file_ref != file_ref:
+            raise RuntimeError(
+                "browse produced a non-idempotent virtual path: "
+                f"{target} resolved to {resolved_file_ref}, expected {file_ref}"
+            )
+        return target
 
     @staticmethod
     def _build_descriptor(title: str, metadata: dict[str, Any]) -> str:
@@ -2010,11 +2027,6 @@ class PageIndexFileSystem:
         if isinstance(value, (int, float)):
             return "number"
         return "string"
-
-    @staticmethod
-    def _infer_source_type(source_path: str) -> Optional[str]:
-        parts = [part for part in Path(source_path).parts if part not in ("", ".")]
-        return parts[0] if parts else None
 
     @staticmethod
     def _scope_folder_path(scope: Optional[dict[str, Any]]) -> Optional[str]:

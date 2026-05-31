@@ -13,7 +13,6 @@ class SearchResult:
     folder_path: str
     folder_paths: list[str]
     metadata: dict[str, Any]
-    source_path: str = ""
     id: Optional[str] = None
     document_id: Optional[str] = None
     name: str = ""
@@ -33,7 +32,6 @@ class OpenResult:
     text: str
     external_id: Optional[str] = None
     folder_path: str = ""
-    source_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -50,7 +48,6 @@ class FileEntry:
     file_ref: str
     external_id: Optional[str]
     storage_uri: str
-    source_path: str
     title: str
     descriptor: str
     content_type: str

@@ -21,7 +21,6 @@ def test_insert_files_does_not_disable_sqlite_synchronous(tmp_path):
                 "file_ref": "ref_report",
                 "external_id": "doc_report",
                 "storage_uri": "file:///tmp/report.pdf",
-                "source_path": "documents/report.pdf",
                 "folder_path": "/documents",
                 "title": "Report",
                 "descriptor": "documents/report.pdf",
