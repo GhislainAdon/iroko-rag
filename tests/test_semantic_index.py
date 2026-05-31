@@ -55,6 +55,44 @@ def test_sqlite_vec_semantic_index_round_trip(tmp_path):
     assert [item.external_id for item in filtered] == ["doc_b"]
 
 
+def test_sqlite_vec_semantic_index_file_ref_filter_not_limited_by_global_rank(tmp_path):
+    index = SQLiteVecSemanticIndex(tmp_path / "semantic.sqlite")
+    index.reset(dimension=2, metadata={"field_mode": "summary"})
+
+    records = [
+        SemanticIndexRecord(
+            file_ref=f"file_off_{item:02d}",
+            external_id=f"doc_off_{item:02d}",
+            source_type="documents",
+            source_path=f"other/{item:02d}.pdf",
+            title=f"Off scope {item:02d}",
+            text="off scope",
+            vector=[1.0, 0.0],
+        )
+        for item in range(30)
+    ]
+    records.append(
+        SemanticIndexRecord(
+            file_ref="file_in_scope",
+            external_id="doc_in_scope",
+            source_type="documents",
+            source_path="documents/in-scope.pdf",
+            title="In scope",
+            text="in scope",
+            vector=[0.0, 1.0],
+        )
+    )
+    index.upsert_many(records)
+
+    results = index.search(
+        [1.0, 0.0],
+        limit=1,
+        filters={"file_ref": ["file_in_scope"]},
+    )
+
+    assert [item.file_ref for item in results] == ["file_in_scope"]
+
+
 def test_summary_projection_indexes_unified_metadata_summary(tmp_path):
     from pageindex.filesystem.projection_indexing import SummaryProjectionIndexer
 

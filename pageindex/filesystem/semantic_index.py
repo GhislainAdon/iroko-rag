@@ -159,15 +159,29 @@ class SQLiteVecSemanticIndex:
             raise SemanticIndexError(
                 f"query vector dimension mismatch: expected {dimension}, got {len(vector)}"
             )
-        fetch_k = min(4096, max(limit, limit * max(fetch_multiplier, 1)))
-        source_types = _source_type_filters(filters or {})
+        raw_filters = filters or {}
+        source_types = _source_type_filters(raw_filters)
+        file_refs = _file_ref_filters(raw_filters)
+        if file_refs == []:
+            return []
         with self.connect() as conn:
+            if file_refs is not None:
+                _install_file_ref_filter_table(conn, file_refs)
             rows = []
             if source_types:
                 for source_type in source_types:
+                    fetch_k = self._search_fetch_k(
+                        conn,
+                        limit,
+                        fetch_multiplier,
+                        exact_file_ref_filter=file_refs is not None,
+                        source_type=source_type,
+                    )
+                    if fetch_k <= 0:
+                        continue
                     rows.extend(
                         conn.execute(
-                            """
+                            f"""
                             SELECT
                                 d.file_ref,
                                 d.external_id,
@@ -180,6 +194,7 @@ class SQLiteVecSemanticIndex:
                             FROM semantic_index_vec v
                             JOIN semantic_index_docs d ON d.rowid = v.rowid
                             WHERE v.embedding MATCH ? AND k = ? AND v.source_type = ?
+                              {_file_ref_filter_sql(file_refs)}
                             ORDER BY v.distance
                             """,
                             (sqlite_vec.serialize_float32(vector), fetch_k, source_type),
@@ -187,8 +202,16 @@ class SQLiteVecSemanticIndex:
                     )
                 rows.sort(key=lambda row: float(row["distance"]))
             else:
+                fetch_k = self._search_fetch_k(
+                    conn,
+                    limit,
+                    fetch_multiplier,
+                    exact_file_ref_filter=file_refs is not None,
+                )
+                if fetch_k <= 0:
+                    return []
                 rows = conn.execute(
-                    """
+                    f"""
                     SELECT
                         d.file_ref,
                         d.external_id,
@@ -201,6 +224,7 @@ class SQLiteVecSemanticIndex:
                     FROM semantic_index_vec v
                     JOIN semantic_index_docs d ON d.rowid = v.rowid
                     WHERE v.embedding MATCH ? AND k = ?
+                      {_file_ref_filter_sql(file_refs)}
                     ORDER BY v.distance
                     """,
                     (sqlite_vec.serialize_float32(vector), fetch_k),
@@ -225,6 +249,30 @@ class SQLiteVecSemanticIndex:
             if len(results) >= limit:
                 break
         return results
+
+    @staticmethod
+    def _search_fetch_k(
+        conn: sqlite3.Connection,
+        limit: int,
+        fetch_multiplier: int,
+        *,
+        exact_file_ref_filter: bool,
+        source_type: str | None = None,
+    ) -> int:
+        if exact_file_ref_filter:
+            where = []
+            params: list[Any] = []
+            if source_type is not None:
+                where.append("source_type = ?")
+                params.append(source_type)
+            where_sql = "WHERE " + " AND ".join(where) if where else ""
+            return int(
+                conn.execute(
+                    f"SELECT COUNT(*) FROM semantic_index_docs {where_sql}",
+                    params,
+                ).fetchone()[0]
+            )
+        return min(4096, max(limit, limit * max(fetch_multiplier, 1)))
 
     def info(self) -> dict[str, Any]:
         with self.connect() as conn:
@@ -344,7 +392,8 @@ def _matches_filters(
     filters: dict[str, Any],
 ) -> bool:
     for key, expected in filters.items():
-        actual = row[key] if key in row.keys() else metadata.get(key)
+        actual_key = "file_ref" if key == "file_refs" else key
+        actual = row[actual_key] if actual_key in row.keys() else metadata.get(actual_key)
         if isinstance(expected, list):
             if str(actual) not in {str(item) for item in expected}:
                 return False
@@ -360,3 +409,41 @@ def _source_type_filters(filters: dict[str, Any]) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value if str(item)]
     return [str(value)] if str(value) else []
+
+
+def _file_ref_filters(filters: dict[str, Any]) -> list[str] | None:
+    if "file_ref" in filters:
+        value = filters.get("file_ref")
+    elif "file_refs" in filters:
+        value = filters.get("file_refs")
+    else:
+        return None
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item)]
+    return [str(value)] if str(value) else []
+
+
+def _install_file_ref_filter_table(conn: sqlite3.Connection, file_refs: list[str]) -> None:
+    conn.execute(
+        """
+        CREATE TEMP TABLE IF NOT EXISTS semantic_index_filter_file_refs (
+            file_ref TEXT PRIMARY KEY
+        )
+        """
+    )
+    conn.execute("DELETE FROM semantic_index_filter_file_refs")
+    conn.executemany(
+        "INSERT OR IGNORE INTO semantic_index_filter_file_refs(file_ref) VALUES (?)",
+        [(file_ref,) for file_ref in file_refs],
+    )
+
+
+def _file_ref_filter_sql(file_refs: list[str] | None) -> str:
+    if file_refs is None:
+        return ""
+    return (
+        "AND EXISTS ("
+        "SELECT 1 FROM semantic_index_filter_file_refs scope_refs "
+        "WHERE scope_refs.file_ref = d.file_ref"
+        ")"
+    )

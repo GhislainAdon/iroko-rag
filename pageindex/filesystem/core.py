@@ -331,6 +331,130 @@ class PageIndexFileSystem:
             max_depth=max_depth,
         )
 
+    def browse_semantic_files(
+        self,
+        path: str,
+        query: str,
+        *,
+        retrieval_query: str | None = None,
+        recursive: bool = False,
+        space: str = "summary",
+        page: int = 1,
+        page_size: int = 10,
+        metadata_filter: Optional[dict[str, Any] | str] = None,
+    ) -> dict[str, Any]:
+        path = normalize_path(path)
+        self.store.folder_info(path)
+        query_text = self._query_text(retrieval_query or query).strip()
+        if not query_text:
+            raise ValueError("browse requires a query")
+        if page < 1:
+            raise ValueError("browse --page must be at least 1")
+        if page_size < 1:
+            raise ValueError("browse page_size must be at least 1")
+        if space not in SEMANTIC_RETRIEVAL_CHANNELS:
+            raise ValueError(
+                "Unsupported browse --space: "
+                f"{space}. Supported spaces: {', '.join(SEMANTIC_RETRIEVAL_CHANNELS)}"
+            )
+        available_spaces = self.semantic_retrieval_channels()
+        if space not in available_spaces:
+            available = ", ".join(available_spaces) if available_spaces else "none"
+            raise ValueError(
+                f"browse --space {space} is not available; available spaces: {available}"
+            )
+        search_channel = getattr(self.semantic_retrieval_backend, "search_channel", None)
+        if search_channel is None:
+            available = ", ".join(available_spaces) if available_spaces else "none"
+            raise ValueError(
+                f"browse --space {space} is not available; available spaces: {available}"
+            )
+        parsed_filter = self.metadata.parse_filter(metadata_filter)
+        scope = {"folder_path": path, "recursive": recursive}
+        scope_file_refs = self.store.file_refs_for_scope(
+            scope=scope,
+            metadata_filter=parsed_filter,
+        )
+        offset = (page - 1) * page_size
+        needed = offset + page_size + 1
+        semantic_filters = self._semantic_filters_for_scope(scope)
+        semantic_filters["file_ref"] = scope_file_refs
+        candidates = (
+            search_channel(
+                space,
+                query_text,
+                limit=needed,
+                filters=semantic_filters,
+            )
+            if scope_file_refs
+            else []
+        )
+        scope_file_ref_set = set(scope_file_refs)
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            try:
+                file_ref = self.store.resolve_file_ref(candidate.document_id)
+            except KeyError:
+                continue
+            if file_ref in seen:
+                continue
+            if file_ref not in scope_file_ref_set:
+                continue
+            if not self.store.file_matches(
+                file_ref,
+                scope=scope,
+                metadata_filter=parsed_filter,
+            ):
+                continue
+            seen.add(file_ref)
+            entry = self.store.get_file(file_ref)
+            folder_paths = [
+                folder["path"]
+                for folder in self.store.folder_memberships(file_ref)
+            ]
+            rank = len(rows) + 1
+            rows.append(
+                {
+                    "rank": rank,
+                    "similarity": self._semantic_candidate_similarity(candidate),
+                    "score": self._semantic_candidate_score(candidate),
+                    "path": self._stable_file_locator(file_ref, entry),
+                    "file_ref": file_ref,
+                    "document_id": entry.external_id,
+                    "external_id": entry.external_id,
+                    "title": entry.title,
+                    "source_path": entry.source_path,
+                    "folder_path": self._preferred_folder_path(
+                        folder_paths,
+                        path,
+                        entry.folder_path,
+                    ),
+                    "folder_paths": folder_paths,
+                    "summary": str((entry.metadata or {}).get("summary") or ""),
+                    "snippet": str(getattr(candidate, "snippet", "") or entry.descriptor),
+                    "metadata": entry.metadata,
+                    "metadata_status": entry.metadata_status,
+                    "sources": list(getattr(candidate, "sources", []) or []),
+                }
+            )
+            if len(rows) >= needed:
+                break
+        page_rows = rows[offset : offset + page_size]
+        return {
+            "mode": "files",
+            "retrieval": f"{space}_vector",
+            "query": query,
+            "scope": path,
+            "recursive": recursive,
+            "space": space,
+            "available_spaces": list(available_spaces),
+            "page": page,
+            "page_size": page_size,
+            "has_more": len(rows) > offset + page_size,
+            "data": page_rows,
+        }
+
     def folder_info(self, path: str = "/") -> dict[str, Any]:
         return self.store.folder_info(path)
 
@@ -1514,6 +1638,45 @@ class PageIndexFileSystem:
             if len(results) >= limit:
                 break
         return results
+
+    @staticmethod
+    def _semantic_candidate_score(candidate: Any) -> float | None:
+        try:
+            return float(getattr(candidate, "score"))
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _semantic_candidate_similarity(cls, candidate: Any) -> float:
+        distances: list[float] = []
+        for source in getattr(candidate, "sources", []) or []:
+            if not isinstance(source, dict) or source.get("distance") is None:
+                continue
+            try:
+                distances.append(float(source["distance"]))
+            except (TypeError, ValueError):
+                continue
+        if distances:
+            distance = max(min(distances), 0.0)
+            return round(max(0.0, min(1.0, 1.0 / (1.0 + distance))), 4)
+        score = cls._semantic_candidate_score(candidate)
+        if score is None:
+            return 0.0
+        return round(max(0.0, min(1.0, score)), 4)
+
+    def _stable_file_locator(self, file_ref: str, entry: Any) -> str:
+        source_path = str(getattr(entry, "source_path", "") or "").strip()
+        if source_path:
+            target = "/" + source_path.strip("/")
+            try:
+                if self.store.resolve_file_ref(target) == file_ref:
+                    return target
+            except KeyError:
+                pass
+        external_id = str(getattr(entry, "external_id", "") or "").strip()
+        if external_id:
+            return external_id
+        return file_ref
 
     @staticmethod
     def _build_descriptor(title: str, metadata: dict[str, Any]) -> str:

@@ -753,6 +753,33 @@ class SQLiteFileSystemStore:
                 return results
         return results
 
+    def file_refs_for_scope(
+        self,
+        *,
+        scope: Optional[dict[str, Any]] = None,
+        metadata_filter: Optional[dict[str, Any]] = None,
+    ) -> list[str]:
+        where = ["f.deleted_at IS NULL"]
+        params: list[Any] = []
+        scope_sql, scope_params = self._scope_sql(scope)
+        if scope_sql:
+            where.append(scope_sql)
+            params.extend(scope_params)
+        metadata_sql, metadata_params = self._metadata_filter_sql(metadata_filter)
+        where.extend(metadata_sql)
+        params.extend(metadata_params)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT f.file_ref
+                FROM files f
+                WHERE {" AND ".join(where)}
+                ORDER BY f.file_ref
+                """,
+                params,
+            ).fetchall()
+        return [row["file_ref"] for row in rows]
+
     def _search_once(
         self,
         match_query: str | None,
