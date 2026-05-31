@@ -22,6 +22,7 @@ from .semantic_folder_policy import (
     is_semantic_folder_forbidden_field,
     semantic_folder_allowed_extension_fields,
 )
+from .hybrid_projection import DEFAULT_EMBEDDING_DIMENSIONS
 from .store import (
     SQLiteFileSystemStore,
     fingerprint,
@@ -103,7 +104,7 @@ class PageIndexFileSystem:
         summary_projection_index_dir: Union[str, Path, None] = None,
         summary_projection_embedding_provider: str = "openai",
         summary_projection_embedding_model: str = "text-embedding-3-small",
-        summary_projection_embedding_dimensions: int = 256,
+        summary_projection_embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         summary_projection_embedding_timeout: float = 60,
     ):
         self.workspace = Path(workspace).expanduser()
@@ -656,7 +657,7 @@ class PageIndexFileSystem:
         *,
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
-        embedding_dimensions: int = 256,
+        embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_timeout: float = 60,
         per_channel_limit: int = 100,
         fetch_multiplier: int = 100,

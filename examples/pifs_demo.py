@@ -42,6 +42,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
 from pageindex import PageIndexClient
 from pageindex.filesystem import MetadataGenerator, PageIndexFileSystem, PIFSCommandExecutor
 from pageindex.filesystem.agent import run_pifs_agent
+from pageindex.filesystem.hybrid_projection import DEFAULT_EMBEDDING_DIMENSIONS
 
 
 EXAMPLES_DIR = Path(__file__).parent
@@ -149,7 +150,11 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("PIFS_DEMO_EMBEDDING_MODEL", "text-embedding-3-small"),
         help="Embedding model used for register-time summary projection.",
     )
-    parser.add_argument("--embedding-dimensions", type=int, default=256)
+    parser.add_argument(
+        "--embedding-dimensions",
+        type=int,
+        default=DEFAULT_EMBEDDING_DIMENSIONS,
+    )
     return parser.parse_args()
 
 

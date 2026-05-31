@@ -844,6 +844,67 @@ def test_existing_summary_projection_index_configures_retrieval_backend(tmp_path
     assert filesystem.semantic_retrieval_channels() == ("summary",)
 
 
+def test_existing_256_summary_projection_index_uses_metadata_dimension_with_new_default(
+    tmp_path, monkeypatch
+):
+    from pageindex.filesystem import PageIndexFileSystem
+    from pageindex.filesystem.semantic_index import SemanticIndexRecord, SQLiteVecSemanticIndex
+
+    workspace = tmp_path / "workspace"
+    index_dir = workspace / "artifacts" / "projection_indexes"
+    summary_index = SQLiteVecSemanticIndex(index_dir / "summary_only_vector.sqlite")
+    summary_index.reset(
+        dimension=256,
+        metadata={
+            "channel": "summary",
+            "embedding_provider": "openai",
+            "embedding_model": "text-embedding-3-small",
+            "embedding_dimensions": 256,
+        },
+    )
+    summary_index.upsert_many(
+        [
+            SemanticIndexRecord(
+                file_ref="file_a",
+                external_id="doc_a",
+                source_type="documents",
+                source_path="documents/a.pdf",
+                title="A",
+                text="summary",
+                vector=[1.0, *([0.0] * 255)],
+            )
+        ]
+    )
+    filesystem = PageIndexFileSystem(workspace)
+    calls = []
+
+    def fake_configure(index_dir_arg, **kwargs):
+        calls.append((index_dir_arg, kwargs))
+        filesystem.semantic_retrieval_backend = SummaryBackend("doc_a")
+        return filesystem.semantic_retrieval_backend
+
+    monkeypatch.setattr(
+        filesystem,
+        "configure_hybrid_projection_retrieval",
+        fake_configure,
+    )
+
+    assert filesystem.summary_projection_embedding_dimensions == 1024
+    assert filesystem.configure_existing_projection_retrieval() is True
+    assert calls == [
+        (
+            filesystem.summary_projection_index_dir,
+            {
+                "embedding_provider": "openai",
+                "embedding_model": "text-embedding-3-small",
+                "embedding_dimensions": 256,
+                "embedding_timeout": 60,
+            },
+        )
+    ]
+    assert summary_index.info()["dimension"] == 256
+
+
 def test_default_semantic_search_uses_summary_projection_when_only_summary_available(tmp_path):
     from pageindex.filesystem import PageIndexFileSystem
     from pageindex.filesystem.hybrid_projection import HybridProjectionSearchBackend

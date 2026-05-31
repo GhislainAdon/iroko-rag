@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .hybrid_projection import (
+    DEFAULT_EMBEDDING_DIMENSIONS,
     EmbeddingCache,
     INDEX_BY_CHANNEL,
     embedding_cache_model_key,
@@ -22,7 +23,7 @@ class SummaryProjectionIndexer:
         embedder: Any,
         embedding_provider: str,
         embedding_model: str,
-        embedding_dimensions: int = 256,
+        embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_cache_path: str | Path | None = None,
     ) -> None:
         self.index_dir = Path(index_dir).expanduser()
@@ -49,10 +50,11 @@ class SummaryProjectionIndexer:
         *,
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
-        embedding_dimensions: int = 256,
+        embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_timeout: float = 60,
         **kwargs: Any,
     ) -> "SummaryProjectionIndexer":
+        cls._validate_existing_index_dimension(index_dir, embedding_dimensions)
         return cls(
             index_dir,
             embedder=make_embedder(
@@ -118,12 +120,10 @@ class SummaryProjectionIndexer:
                 "aside or rebuild it intentionally before changing embedding config."
             ) from exc
         if existing_dimension != self.embedding_dimensions:
-            raise RuntimeError(
-                "summary projection index dimension mismatch: "
-                f"{self.index.db_path} was built with dimension {existing_dimension}, "
-                f"but configured embedding_dimensions is {self.embedding_dimensions}. "
-                "Use the matching embedding config, or rebuild the projection index "
-                "at a new path after preserving the existing data."
+            raise self._dimension_mismatch_error(
+                self.index.db_path,
+                existing_dimension,
+                self.embedding_dimensions,
             )
 
     def _index_metadata(self) -> dict[str, Any]:
@@ -133,3 +133,44 @@ class SummaryProjectionIndexer:
             "embedding_model": self.embedding_model,
             "embedding_dimensions": self.embedding_dimensions,
         }
+
+    @classmethod
+    def _validate_existing_index_dimension(
+        cls,
+        index_dir: str | Path,
+        embedding_dimensions: int,
+    ) -> None:
+        index_path = (
+            Path(index_dir).expanduser() / f"{INDEX_BY_CHANNEL['summary']}.sqlite"
+        )
+        if not index_path.exists():
+            return
+        index = SQLiteVecSemanticIndex(index_path)
+        try:
+            existing_dimension = index.dimension()
+        except Exception as exc:
+            raise RuntimeError(
+                "could not validate existing summary projection index config; "
+                f"refusing to reset {index_path}. Move the existing index "
+                "aside or rebuild it intentionally before changing embedding config."
+            ) from exc
+        if existing_dimension != embedding_dimensions:
+            raise cls._dimension_mismatch_error(
+                index_path,
+                existing_dimension,
+                embedding_dimensions,
+            )
+
+    @staticmethod
+    def _dimension_mismatch_error(
+        index_path: Path,
+        existing_dimension: int,
+        embedding_dimensions: int,
+    ) -> RuntimeError:
+        return RuntimeError(
+            "summary projection index dimension mismatch: "
+            f"{index_path} was built with dimension {existing_dimension}, "
+            f"but configured embedding_dimensions is {embedding_dimensions}. "
+            "Use the matching embedding config, or rebuild the projection index "
+            "at a new path after preserving the existing data."
+        )
