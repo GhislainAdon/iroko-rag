@@ -77,6 +77,11 @@ PROJECTION_INDEX_STATUSES = {
 }
 
 SEMANTIC_RETRIEVAL_CHANNELS = ("summary", "entity", "relation")
+SEMANTIC_PROJECTION_INDEX_NAMES = {
+    "summary": "summary_only_vector",
+    "entity": "entity_vectors",
+    "relation": "relation_vectors",
+}
 PAGEINDEX_DOCUMENT_SUFFIXES = {".pdf", ".md", ".markdown"}
 PAGEINDEX_DOCUMENT_CONTENT_TYPES = {
     "application/pdf",
@@ -277,16 +282,15 @@ class PageIndexFileSystem:
         return bool(self.semantic_retrieval_channels())
 
     def _existing_projection_index_config(self) -> dict[str, Any] | None:
-        from .hybrid_projection import INDEX_BY_CHANNEL
-        from .semantic_index import SQLiteVecSemanticIndex
-
         for channel in SEMANTIC_RETRIEVAL_CHANNELS:
-            index_name = INDEX_BY_CHANNEL.get(channel)
+            index_name = SEMANTIC_PROJECTION_INDEX_NAMES.get(channel)
             if not index_name:
                 continue
             index_path = self.summary_projection_index_dir / f"{index_name}.sqlite"
             if not index_path.exists():
                 continue
+            from .semantic_index import SQLiteVecSemanticIndex
+
             try:
                 info = SQLiteVecSemanticIndex(index_path).info()
             except Exception:

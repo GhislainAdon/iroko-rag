@@ -1,5 +1,9 @@
+import builtins
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 
 class FakeFileSystem:
@@ -25,22 +29,69 @@ def test_cli_workspace_configures_existing_projection_retrieval(monkeypatch, tmp
     assert filesystem.projection_retrieval_configured is True
 
 
-def test_cli_workspace_surfaces_projection_dimension_mismatch(monkeypatch, tmp_path):
-    import pytest
-
+def test_cli_workspace_without_projection_index_does_not_require_sqlite_vec(
+    monkeypatch, tmp_path
+):
     from pageindex.filesystem import cli
 
-    class MismatchedFileSystem:
-        def __init__(self, workspace):
-            self.workspace = Path(workspace)
+    workspace = tmp_path / "workspace"
+    real_import = builtins.__import__
 
-        def configure_existing_projection_retrieval(self):
-            raise RuntimeError("summary projection index dimension mismatch: rebuild")
+    monkeypatch.delitem(sys.modules, "pageindex.filesystem.hybrid_projection", raising=False)
+    monkeypatch.delitem(sys.modules, "pageindex.filesystem.semantic_index", raising=False)
+    monkeypatch.delitem(sys.modules, "sqlite_vec", raising=False)
 
-    monkeypatch.setattr(cli, "PageIndexFileSystem", MismatchedFileSystem)
+    def block_sqlite_vec(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.split(".", 1)[0] == "sqlite_vec":
+            raise ModuleNotFoundError("No module named 'sqlite_vec'", name="sqlite_vec")
+        return real_import(name, globals, locals, fromlist, level)
 
-    with pytest.raises(RuntimeError, match="dimension mismatch"):
-        cli._filesystem_from_workspace(str(tmp_path / "workspace"))
+    monkeypatch.setattr(builtins, "__import__", block_sqlite_vec)
+
+    filesystem = cli._filesystem_from_workspace(str(workspace))
+
+    assert filesystem.workspace == workspace
+    assert filesystem.semantic_retrieval_channels() == ()
+
+
+def test_cli_workspace_surfaces_projection_dimension_mismatch(tmp_path):
+    from pageindex.filesystem import cli
+    from pageindex.filesystem.semantic_index import SemanticIndexRecord, SQLiteVecSemanticIndex
+
+    workspace = tmp_path / "workspace"
+    index_dir = workspace / "artifacts" / "projection_indexes"
+    summary_index = SQLiteVecSemanticIndex(index_dir / "summary_only_vector.sqlite")
+    summary_index.reset(
+        dimension=3,
+        metadata={
+            "channel": "summary",
+            "embedding_provider": "test",
+            "embedding_model": "fake",
+            "embedding_dimensions": 3,
+        },
+    )
+    summary_index.upsert_many(
+        [
+            SemanticIndexRecord(
+                file_ref="file_a",
+                external_id="doc_a",
+                source_type="documents",
+                source_path="documents/a.pdf",
+                title="A",
+                text="summary",
+                vector=[1.0, 0.0, 0.0],
+            )
+        ]
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "summary projection index dimension mismatch: .*"
+            "dimension 3.*summary_projection_embedding_dimensions is 1024.*Rebuild"
+        ),
+    ):
+        cli._filesystem_from_workspace(str(workspace))
 
 
 def test_cli_passthrough_invokes_pifs_command_executor(monkeypatch, capsys, tmp_path):
