@@ -70,9 +70,10 @@ class ChannelBackend:
 
 
 class BrowseBackend:
-    def __init__(self, document_ids, channels=("summary",)):
+    def __init__(self, document_ids, channels=("summary",), file_refs_by_document_id=None):
         self.document_ids = list(document_ids)
         self.channels = channels
+        self.file_refs_by_document_id = dict(file_refs_by_document_id or {})
         self.calls = []
 
     def available_channels(self):
@@ -80,6 +81,20 @@ class BrowseBackend:
 
     def search_channel(self, channel, query, *, limit=10, filters=None):
         self.calls.append((channel, query, limit, filters))
+        file_ref_filter = set()
+        if isinstance(filters, dict):
+            raw_file_refs = filters.get("file_ref") or filters.get("file_refs") or []
+            if isinstance(raw_file_refs, str):
+                file_ref_filter = {raw_file_refs}
+            else:
+                file_ref_filter = {str(item) for item in raw_file_refs}
+        document_ids = self.document_ids
+        if file_ref_filter and self.file_refs_by_document_id:
+            document_ids = [
+                document_id
+                for document_id in document_ids
+                if self.file_refs_by_document_id.get(document_id) in file_ref_filter
+            ]
         return [
             SimpleNamespace(
                 document_id=document_id,
@@ -87,7 +102,7 @@ class BrowseBackend:
                 score=1.0 - rank * 0.01,
                 sources=[{"channel": channel, "rank": rank, "distance": rank / 10}],
             )
-            for rank, document_id in enumerate(self.document_ids[:limit], 1)
+            for rank, document_id in enumerate(document_ids[:limit], 1)
         ]
 
 
@@ -108,11 +123,11 @@ def _register_browse_file(filesystem, external_id, folder_path, *, department="o
 
     filesystem.metadata_generator = SummaryGenerator()
     return filesystem.register_file(
-        storage_uri=f"file:///tmp/{external_id}.pdf",
-        source_path=f"documents/{external_id}.pdf",
+        storage_uri=f"file:///tmp/{external_id}.txt",
+        source_path=f"documents/{external_id}.txt",
         folder_path=folder_path,
         external_id=external_id,
-        title=f"{external_id}.pdf",
+        title=f"{external_id}.txt",
         content=f"{external_id} discusses vector databases and retrieval.",
         metadata={"department": department},
         metadata_policy={
@@ -260,6 +275,49 @@ def test_browse_supports_fixed_size_one_based_pagination_and_metadata_filter(tmp
     )["data"]
     assert [item["document_id"] for item in filtered["data"]] == ["doc_10"]
     assert filtered["data"][0]["summary"] == "summary for doc_10"
+
+
+def test_browse_scopes_semantic_search_before_candidate_limit(tmp_path):
+    import json
+
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+
+    filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    file_refs_by_document_id = {}
+    candidate_ids = []
+    for index in range(150):
+        external_id = f"off_scope_{index:02d}"
+        candidate_ids.append(external_id)
+        file_refs_by_document_id[external_id] = _register_browse_file(
+            filesystem,
+            external_id,
+            "/other",
+        )
+    file_refs_by_document_id["doc_deep"] = _register_browse_file(
+        filesystem,
+        "doc_deep",
+        "/documents/reports",
+    )
+    file_refs_by_document_id["doc_direct"] = _register_browse_file(
+        filesystem,
+        "doc_direct",
+        "/documents",
+    )
+    backend = BrowseBackend(
+        [*candidate_ids, "doc_deep", "doc_direct"],
+        file_refs_by_document_id=file_refs_by_document_id,
+    )
+    filesystem.semantic_retrieval_backend = backend
+    executor = PIFSCommandExecutor(filesystem, json_output=True)
+
+    direct = json.loads(executor.execute('browse /documents "vector database"'))["data"]
+    assert [item["document_id"] for item in direct["data"]] == ["doc_direct"]
+
+    recursive = json.loads(executor.execute('browse -R /documents "vector database"'))["data"]
+    assert [item["document_id"] for item in recursive["data"]] == [
+        "doc_deep",
+        "doc_direct",
+    ]
 
 
 def test_semantic_search_scope_keeps_ordinary_folders_out_of_source_type_filters(tmp_path):

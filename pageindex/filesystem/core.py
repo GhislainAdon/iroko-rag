@@ -371,15 +371,25 @@ class PageIndexFileSystem:
             )
         parsed_filter = self.metadata.parse_filter(metadata_filter)
         scope = {"folder_path": path, "recursive": recursive}
+        scope_file_refs = self.store.file_refs_for_scope(
+            scope=scope,
+            metadata_filter=parsed_filter,
+        )
         offset = (page - 1) * page_size
         needed = offset + page_size + 1
-        fetch_limit = max(needed * 10, 50)
-        candidates = search_channel(
-            space,
-            query_text,
-            limit=fetch_limit,
-            filters=self._semantic_filters_for_scope(scope),
+        semantic_filters = self._semantic_filters_for_scope(scope)
+        semantic_filters["file_ref"] = scope_file_refs
+        candidates = (
+            search_channel(
+                space,
+                query_text,
+                limit=needed,
+                filters=semantic_filters,
+            )
+            if scope_file_refs
+            else []
         )
+        scope_file_ref_set = set(scope_file_refs)
         rows: list[dict[str, Any]] = []
         seen: set[str] = set()
         for candidate in candidates:
@@ -388,6 +398,8 @@ class PageIndexFileSystem:
             except KeyError:
                 continue
             if file_ref in seen:
+                continue
+            if file_ref not in scope_file_ref_set:
                 continue
             if not self.store.file_matches(
                 file_ref,
