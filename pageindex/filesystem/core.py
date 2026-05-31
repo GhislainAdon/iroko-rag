@@ -215,6 +215,7 @@ class PageIndexFileSystem:
         final_dir_created = False
         catalog_inserted = False
         records: list[dict[str, Any]] = []
+        preexisting_pageindex_doc_ids = self._pageindex_cache_doc_ids()
 
         uploads_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=f".add-{file_ref}-", dir=uploads_dir) as tmp:
@@ -263,6 +264,7 @@ class PageIndexFileSystem:
                     self._cleanup_add_catalog_record(file_ref)
                 self._cleanup_add_summary_projection(records)
                 self._cleanup_failed_register_artifacts(records)
+                self._cleanup_add_pageindex_cache(records, preexisting_pageindex_doc_ids)
                 self._cleanup_add_created_folders(add_created_folder_paths)
                 if final_dir_created:
                     shutil.rmtree(final_dir, ignore_errors=True)
@@ -1734,6 +1736,64 @@ class PageIndexFileSystem:
                 self.store.delete_empty_folder(folder_path)
             except Exception:
                 continue
+
+    def _pageindex_cache_doc_ids(self) -> set[str]:
+        workspace = self.pageindex_client_workspace
+        doc_ids = {path.stem for path in workspace.glob("*.json") if path.name != "_meta.json"}
+        meta_path = workspace / "_meta.json"
+        if not meta_path.exists():
+            return doc_ids
+        try:
+            payload = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return doc_ids
+        if isinstance(payload, dict):
+            doc_ids.update(str(doc_id) for doc_id in payload)
+        return doc_ids
+
+    def _cleanup_add_pageindex_cache(
+        self,
+        records: list[dict[str, Any]],
+        preexisting_doc_ids: set[str],
+    ) -> None:
+        doc_ids: list[str] = []
+        for record in records:
+            doc_id = str(record.get("pageindex_doc_id") or "").strip()
+            if doc_id and doc_id not in preexisting_doc_ids:
+                doc_ids.append(doc_id)
+        if not doc_ids:
+            return
+        workspace = self.pageindex_client_workspace
+        for doc_id in doc_ids:
+            try:
+                (workspace / f"{doc_id}.json").unlink()
+            except FileNotFoundError:
+                pass
+            except Exception:
+                continue
+        meta_path = workspace / "_meta.json"
+        if not meta_path.exists():
+            return
+        try:
+            payload = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        changed = False
+        for doc_id in doc_ids:
+            if doc_id in payload:
+                payload.pop(doc_id, None)
+                changed = True
+        if not changed:
+            return
+        try:
+            meta_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            return
 
     @staticmethod
     def _metadata_policy_is_batch(policy: dict[str, Any]) -> bool:
