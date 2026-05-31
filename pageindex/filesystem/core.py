@@ -1756,11 +1756,12 @@ class PageIndexFileSystem:
         records: list[dict[str, Any]],
         preexisting_doc_ids: set[str],
     ) -> None:
-        doc_ids: list[str] = []
+        doc_ids = sorted(self._pageindex_cache_doc_ids() - preexisting_doc_ids)
         for record in records:
             doc_id = str(record.get("pageindex_doc_id") or "").strip()
             if doc_id and doc_id not in preexisting_doc_ids:
                 doc_ids.append(doc_id)
+        doc_ids = sorted(set(doc_ids))
         if not doc_ids:
             return
         workspace = self.pageindex_client_workspace

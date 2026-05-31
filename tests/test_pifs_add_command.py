@@ -288,6 +288,48 @@ def test_add_markdown_insert_failure_removes_pageindex_cache(tmp_path, monkeypat
     assert not list((workspace / "artifacts" / "raw").glob("*.json"))
 
 
+def test_add_markdown_index_failure_removes_pageindex_cache_delta(tmp_path, monkeypatch):
+    from pageindex import PageIndexClient
+
+    def fake_index(self, file_path, mode="auto"):
+        doc_id = "doc_partial_before_raise"
+        doc = {
+            "id": doc_id,
+            "type": "md",
+            "path": str(Path(file_path).resolve()),
+            "doc_name": "partial.md",
+            "doc_description": "",
+            "line_count": 3,
+            "structure": [{"title": "Partial", "node_id": "0001", "nodes": []}],
+        }
+        self.documents[doc_id] = doc
+        self._save_doc(doc_id)
+        raise RuntimeError("index failed after cache write")
+
+    monkeypatch.setattr(PageIndexClient, "index", fake_index)
+    source = tmp_path / "partial.md"
+    source.write_text("# Partial\n\nbody", encoding="utf-8")
+    workspace = tmp_path / "workspace"
+    filesystem = make_filesystem(workspace)
+    pageindex_workspace = workspace / "artifacts" / "pageindex_client"
+
+    with pytest.raises(RuntimeError, match="failed to build PageIndex tree"):
+        filesystem.add_file(source, "/documents/reports")
+
+    assert not (pageindex_workspace / "doc_partial_before_raise.json").exists()
+    meta_path = pageindex_workspace / "_meta.json"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert "doc_partial_before_raise" not in meta
+    listing = filesystem.browse("/", recursive=True)
+    assert listing["files"] == []
+    assert listing["folders"] == []
+    assert filesystem.summary_projection_indexer.index.info()["document_count"] == 0
+    assert not list((workspace / "artifacts" / "uploads").glob("**/*"))
+    assert not list((workspace / "artifacts" / "text").glob("*.txt"))
+    assert not list((workspace / "artifacts" / "raw").glob("*.json"))
+
+
 def test_add_markdown_failure_preserves_unrelated_pageindex_cache(tmp_path, monkeypatch):
     from pageindex import PageIndexClient
 
