@@ -69,6 +69,199 @@ class ChannelBackend:
         ]
 
 
+class BrowseBackend:
+    def __init__(self, document_ids, channels=("summary",)):
+        self.document_ids = list(document_ids)
+        self.channels = channels
+        self.calls = []
+
+    def available_channels(self):
+        return self.channels
+
+    def search_channel(self, channel, query, *, limit=10, filters=None):
+        self.calls.append((channel, query, limit, filters))
+        return [
+            SimpleNamespace(
+                document_id=document_id,
+                snippet=f"{channel} candidate {rank}: {query}",
+                score=1.0 - rank * 0.01,
+                sources=[{"channel": channel, "rank": rank, "distance": rank / 10}],
+            )
+            for rank, document_id in enumerate(self.document_ids[:limit], 1)
+        ]
+
+
+def _register_browse_file(filesystem, external_id, folder_path, *, department="ops"):
+    from pageindex.filesystem.metadata_generation import MetadataGenerationResult
+
+    class SummaryGenerator:
+        def generate(self, document, *, fields):
+            values = {
+                "summary": f"summary for {document.external_id}",
+                "doc_type": "memo",
+                "domain": "finance",
+                "topic": "risk",
+            }
+            return MetadataGenerationResult(
+                values={field: values[field] for field in fields if field in values}
+            )
+
+    filesystem.metadata_generator = SummaryGenerator()
+    return filesystem.register_file(
+        storage_uri=f"file:///tmp/{external_id}.pdf",
+        source_path=f"documents/{external_id}.pdf",
+        folder_path=folder_path,
+        external_id=external_id,
+        title=f"{external_id}.pdf",
+        content=f"{external_id} discusses vector databases and retrieval.",
+        metadata={"department": department},
+        metadata_policy={
+            "fields": {
+                "summary": True,
+                "doc_type": False,
+                "domain": False,
+                "topic": False,
+            }
+        },
+    )
+
+
+def test_browse_is_agent_visible_semantic_command(tmp_path):
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+
+    filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    executor = PIFSCommandExecutor(filesystem)
+
+    assert "browse" in executor.allowed_commands()
+    assert 'browse [-R] <folder> "<query>"' in executor.describe_available_command_surfaces()
+
+
+def test_browse_requires_positional_query_and_rejects_removed_options(tmp_path):
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+    from pageindex.filesystem.commands import PIFSCommandError
+
+    filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    _register_browse_file(filesystem, "doc_direct", "/documents")
+    filesystem.semantic_retrieval_backend = BrowseBackend(["doc_direct"])
+    executor = PIFSCommandExecutor(filesystem, json_output=True)
+
+    with pytest.raises(PIFSCommandError, match="browse requires a query"):
+        executor.execute("browse /documents")
+    with pytest.raises(PIFSCommandError, match="--query"):
+        executor.execute('browse /documents "vector database" --query "other"')
+    with pytest.raises(PIFSCommandError, match="--limit"):
+        executor.execute('browse /documents "vector database" --limit 10')
+    with pytest.raises(PIFSCommandError, match="--offset"):
+        executor.execute('browse /documents "vector database" --offset 10')
+    with pytest.raises(PIFSCommandError, match="browse accepts a folder and one quoted query"):
+        executor.execute("browse /documents vector database")
+
+
+def test_browse_validates_space_availability_and_page(tmp_path):
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+    from pageindex.filesystem.commands import PIFSCommandError
+
+    filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    _register_browse_file(filesystem, "doc_direct", "/documents")
+    filesystem.semantic_retrieval_backend = BrowseBackend(["doc_direct"], channels=("summary",))
+    executor = PIFSCommandExecutor(filesystem, json_output=True)
+
+    with pytest.raises(PIFSCommandError, match="Unsupported browse --space: hybrid"):
+        executor.execute('browse /documents "vector database" --space hybrid')
+    with pytest.raises(PIFSCommandError, match="available spaces: summary"):
+        executor.execute('browse /documents "vector database" --space entity')
+    with pytest.raises(PIFSCommandError, match="browse --page must be at least 1"):
+        executor.execute('browse /documents "vector database" --page 0')
+
+
+def test_browse_default_summary_does_not_fallback_to_other_spaces(tmp_path):
+    import json
+
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+    from pageindex.filesystem.commands import PIFSCommandError
+
+    filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    _register_browse_file(filesystem, "doc_direct", "/documents")
+    backend = BrowseBackend(["doc_direct"], channels=("entity",))
+    filesystem.semantic_retrieval_backend = backend
+    executor = PIFSCommandExecutor(filesystem, json_output=True)
+
+    with pytest.raises(PIFSCommandError, match="available spaces: entity"):
+        executor.execute('browse /documents "vector database"')
+    assert backend.calls == []
+
+    result = json.loads(
+        executor.execute('browse /documents "vector database" --space entity')
+    )["data"]
+    assert [item["document_id"] for item in result["data"]] == ["doc_direct"]
+    assert backend.calls[-1][0] == "entity"
+
+
+def test_browse_non_recursive_searches_only_direct_files_and_recursive_is_global(tmp_path):
+    import json
+
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+
+    filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    _register_browse_file(filesystem, "doc_direct", "/documents")
+    _register_browse_file(filesystem, "doc_deep", "/documents/reports")
+    backend = BrowseBackend(["doc_deep", "doc_direct"])
+    filesystem.semantic_retrieval_backend = backend
+    executor = PIFSCommandExecutor(filesystem, json_output=True)
+
+    direct = json.loads(executor.execute('browse /documents "vector database"'))["data"]
+    assert [item["document_id"] for item in direct["data"]] == ["doc_direct"]
+    assert direct["recursive"] is False
+    assert direct["space"] == "summary"
+    assert direct["page"] == 1
+    assert direct["page_size"] == 10
+    assert backend.calls[-1][0] == "summary"
+
+    recursive = json.loads(executor.execute('browse -R /documents "vector database"'))["data"]
+    assert [item["document_id"] for item in recursive["data"]] == [
+        "doc_deep",
+        "doc_direct",
+    ]
+    assert [item["rank"] for item in recursive["data"]] == [1, 2]
+    assert recursive["recursive"] is True
+
+
+def test_browse_supports_fixed_size_one_based_pagination_and_metadata_filter(tmp_path):
+    import json
+
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+
+    filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    document_ids = []
+    for index in range(12):
+        external_id = f"doc_{index:02d}"
+        document_ids.append(external_id)
+        department = "finance" if index == 10 else "ops"
+        _register_browse_file(filesystem, external_id, "/documents", department=department)
+    filesystem.semantic_retrieval_backend = BrowseBackend(document_ids)
+    executor = PIFSCommandExecutor(filesystem, json_output=True)
+
+    first_page = json.loads(executor.execute('browse /documents "vector database"'))["data"]
+    assert len(first_page["data"]) == 10
+    assert first_page["has_more"] is True
+    assert first_page["data"][0]["rank"] == 1
+
+    second_page = json.loads(
+        executor.execute('browse /documents "vector database" --page 2')
+    )["data"]
+    assert [item["document_id"] for item in second_page["data"]] == ["doc_10", "doc_11"]
+    assert [item["rank"] for item in second_page["data"]] == [11, 12]
+    assert second_page["has_more"] is False
+
+    filtered = json.loads(
+        executor.execute(
+            'browse /documents "vector database" --where \'{"department":"finance"}\''
+        )
+    )["data"]
+    assert [item["document_id"] for item in filtered["data"]] == ["doc_10"]
+    assert filtered["data"][0]["summary"] == "summary for doc_10"
+
+
 def test_semantic_search_scope_keeps_ordinary_folders_out_of_source_type_filters(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult

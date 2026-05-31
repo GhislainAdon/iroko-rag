@@ -23,6 +23,7 @@ class PIFSCommandExecutor:
         "tree",
         "find",
         "grep",
+        "browse",
         "cat",
         "stat",
         "head",
@@ -53,6 +54,7 @@ class PIFSCommandExecutor:
     MAX_FIND_LIMIT = 50
     MAX_GREP_LIMIT = 20
     MAX_SEMANTIC_LIMIT = 20
+    BROWSE_PAGE_SIZE = 10
     MAX_TEXT_LINES = 100
     MAX_PAGE_SPAN = 5
     MAX_STRUCTURE_NODES = 25
@@ -102,6 +104,8 @@ class PIFSCommandExecutor:
             "Available command surfaces for this workspace:",
             "- mode: read-only inspection",
             "- ls/tree: folder browsing",
+            '- browse [-R] <folder> "<query>" [--space summary|entity|relation] '
+            "[--page N] [--where JSON]: semantic relevance file browsing",
             "- find <folder>: folder path is positional; do not put paths in --where",
             "- find --where: exact/canonical metadata DSL filtering using stat --schema fields only",
             "- find <folder> -maxdepth N -type f|d: bounded folder traversal for find",
@@ -263,6 +267,80 @@ class PIFSCommandExecutor:
             depth = self.MAX_TREE_DEPTH
         listing = self.filesystem.browse(path, recursive=True, limit=limit)
         return {"path": path, "depth": depth, "limit": limit, **listing}
+
+    def _cmd_browse(self, args: list[str]) -> Any:
+        recursive = False
+        where = None
+        space = "summary"
+        page = 1
+        positionals = []
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg in {"-R", "-r", "--recursive"}:
+                recursive = True
+            elif arg == "--where":
+                i += 1
+                if i >= len(args):
+                    raise PIFSCommandError("browse --where requires a JSON value")
+                where = args[i]
+            elif arg == "--space":
+                i += 1
+                if i >= len(args):
+                    raise PIFSCommandError("browse --space requires a value")
+                space = args[i]
+            elif arg == "--page":
+                i += 1
+                if i >= len(args):
+                    raise PIFSCommandError("browse --page requires a value")
+                page = self._parse_non_negative_int(args[i], "browse --page")
+            elif arg in {"--limit", "--offset", "--query"}:
+                raise PIFSCommandError(
+                    f"browse does not support {arg}; use fixed page size "
+                    f"{self.BROWSE_PAGE_SIZE} and --page N"
+                )
+            elif arg.startswith("-"):
+                raise PIFSCommandError(f"Unsupported browse option: {arg}")
+            else:
+                positionals.append(arg)
+            i += 1
+        if len(positionals) < 2:
+            raise PIFSCommandError('browse requires a query: browse <folder> "<query>"')
+        if len(positionals) > 2:
+            raise PIFSCommandError(
+                'browse accepts a folder and one quoted query, for example: '
+                'browse /documents "Federal Reserve"'
+            )
+        path, query = positionals
+        if not str(path).startswith("/"):
+            raise PIFSCommandError("browse target must be a PIFS folder path like /documents")
+        query = str(query or "").strip()
+        if not query:
+            raise PIFSCommandError('browse requires a query: browse <folder> "<query>"')
+        if page < 1:
+            raise PIFSCommandError("browse --page must be at least 1")
+        if space not in SEMANTIC_RETRIEVAL_CHANNELS:
+            raise PIFSCommandError(
+                "Unsupported browse --space: "
+                f"{space}. Supported spaces: {', '.join(SEMANTIC_RETRIEVAL_CHANNELS)}"
+            )
+        if not self.filesystem.has_semantic_channel(space):
+            available = self.filesystem.semantic_retrieval_channels()
+            available_text = ", ".join(available) if available else "none"
+            raise PIFSCommandError(
+                f"browse --space {space} is not available; available spaces: {available_text}"
+            )
+        normalized = self._normalize_folder_path(path)
+        return self.filesystem.browse_semantic_files(
+            normalized,
+            query,
+            retrieval_query=self._semantic_retrieval_query(query),
+            recursive=recursive,
+            space=space,
+            page=page,
+            page_size=self.BROWSE_PAGE_SIZE,
+            metadata_filter=where,
+        )
 
     def _cmd_find(self, args: list[str]) -> Any:
         path = "/"
