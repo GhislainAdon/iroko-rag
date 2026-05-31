@@ -17,14 +17,6 @@ from .metadata_generation import (
     MetadataGenerator,
 )
 from .embedding_defaults import DEFAULT_EMBEDDING_DIMENSIONS
-from .semantic_folder_policy import (
-    SEMANTIC_FOLDER_BASE_FIELDS,
-    SEMANTIC_FOLDER_ROOT,
-    SEMANTIC_FOLDER_SYSTEM_FIELDS,
-    canonical_semantic_folder_field_name,
-    is_semantic_folder_forbidden_field,
-    semantic_folder_allowed_extension_fields,
-)
 from .store import (
     SQLiteFileSystemStore,
     fingerprint,
@@ -571,8 +563,7 @@ class PageIndexFileSystem:
         )
         offset = (page - 1) * page_size
         needed = offset + page_size + 1
-        semantic_filters = self._semantic_filters_for_scope(scope)
-        semantic_filters["file_ref"] = scope_file_refs
+        semantic_filters = {"file_ref": scope_file_refs}
         candidates = (
             search_channel(
                 space,
@@ -695,95 +686,14 @@ class PageIndexFileSystem:
     def attach_files_to_folders(self, items: list[dict[str, Any]]) -> None:
         self.store.attach_files_to_folders(items)
 
-    def apply_semantic_folder_projection(
-        self,
-        projection_plan: dict[str, Any],
-        *,
-        file_ref_by_document_id: Optional[dict[str, str]] = None,
-    ) -> dict[str, Any]:
-        """Attach registered files to a Semantic Folder Projection.
-
-        Registration remains the explicit folder placement step. This method is
-        the separate product API for adding derived `/semantic/...` memberships.
-        """
-        folders = list(projection_plan.get("folders") or [])
-        memberships = list(projection_plan.get("memberships") or [])
-        policy_raw = projection_plan.get("policy")
-        policy = policy_raw if isinstance(policy_raw, dict) else {}
-        allowed_extension_fields = semantic_folder_allowed_extension_fields(
-            policy.get("allowed_extension_fields", [])
-        )
-        for folder in folders:
-            self._validate_semantic_folder_projection_item(folder, allowed_extension_fields)
-        for membership in memberships:
-            self._validate_semantic_folder_projection_item(membership, allowed_extension_fields)
-
-        for folder in folders:
-            folder_metadata = folder.get("metadata")
-            self.create_folder(
-                self._validate_semantic_folder_projection_path(str(folder["path"])),
-                kind=str(folder.get("kind") or "semantic_projection"),
-                description=str(folder.get("description") or ""),
-                metadata=folder_metadata if isinstance(folder_metadata, dict) else {},
-            )
-
-        items: list[dict[str, Any]] = []
-        file_ref_by_document_id = file_ref_by_document_id or {}
-        for membership in memberships:
-            document_id = self._semantic_folder_projection_document_id(membership)
-            file_ref = file_ref_by_document_id.get(document_id)
-            if not file_ref:
-                file_ref = self.store.resolve_file_ref(document_id)
-            metadata = (
-                dict(membership.get("folder_metadata"))
-                if isinstance(membership.get("folder_metadata"), dict)
-                else {}
-            )
-            metadata.update(
-                {
-                    "projection": "Semantic Folder Projection",
-                    "field": membership.get("field", ""),
-                    "value": membership.get("value", ""),
-                    "mount_kind": membership.get(
-                        "mount_kind",
-                        "semantic_folder_projection",
-                    ),
-                }
-            )
-            items.append(
-                {
-                    "file_ref": file_ref,
-                    "folder": self._validate_semantic_folder_projection_path(
-                        str(membership["folder_path"])
-                    ),
-                    "metadata": metadata,
-                }
-            )
-        self.attach_files_to_folders(items)
-        return {
-            "projection": "Semantic Folder Projection",
-            "folders_applied": len(folders),
-            "memberships_attached": len(items),
-        }
-
     def search(
         self,
         query: Union[str, list[str], None] = None,
         scope: Optional[dict[str, Any]] = None,
         metadata_filter: Optional[dict[str, Any] | str] = None,
         limit: int = 10,
-        semantic: bool = True,
     ) -> list[SearchResult]:
         parsed_filter = self.metadata.parse_filter(metadata_filter)
-        if semantic and self._should_use_semantic_retrieval(query, scope):
-            semantic_results = self._semantic_search(
-                query,
-                scope=scope,
-                metadata_filter=parsed_filter,
-                limit=limit,
-            )
-            if semantic_results:
-                return semantic_results
         rows = self.store.search_files(
             query,
             scope=scope,
@@ -821,30 +731,6 @@ class PageIndexFileSystem:
             )
         return results
 
-    def search_semantic_channel(
-        self,
-        channel: str,
-        query: Union[str, list[str], None],
-        *,
-        scope: Optional[dict[str, Any]] = None,
-        metadata_filter: Optional[dict[str, Any] | str] = None,
-        limit: int = 10,
-    ) -> list[SearchResult]:
-        parsed_filter = self.metadata.parse_filter(metadata_filter)
-        if (
-            self.semantic_retrieval_backend is None
-            or not self.has_semantic_channel(channel)
-            or not self._query_text(query)
-        ):
-            return []
-        return self._semantic_search(
-            query,
-            scope=scope,
-            metadata_filter=parsed_filter,
-            limit=limit,
-            channel=channel,
-        )
-
     def configure_hybrid_projection_retrieval(
         self,
         index_dir: Union[str, Path],
@@ -853,7 +739,6 @@ class PageIndexFileSystem:
         embedding_model: str = "text-embedding-3-small",
         embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_timeout: float = 60,
-        per_channel_limit: int = 100,
         fetch_multiplier: int = 100,
     ) -> Any:
         from .hybrid_projection import HybridProjectionSearchBackend
@@ -864,7 +749,6 @@ class PageIndexFileSystem:
             embedding_model=embedding_model,
             embedding_dimensions=embedding_dimensions,
             embedding_timeout=embedding_timeout,
-            per_channel_limit=per_channel_limit,
             fetch_multiplier=fetch_multiplier,
         )
         return self.semantic_retrieval_backend
@@ -904,30 +788,6 @@ class PageIndexFileSystem:
                 "commands": semantic_commands,
             },
         }
-
-    def find(
-        self,
-        target: str,
-        patterns: Union[str, list[str]],
-        limit: int = 20,
-    ) -> list[OpenResult]:
-        file_ref = self._resolve_target(target)
-        patterns = [patterns] if isinstance(patterns, str) else list(patterns)
-        lowered_patterns = [pattern.lower() for pattern in patterns if pattern]
-        if not lowered_patterns:
-            return []
-        text = self.store.read_text(file_ref)
-        lines = text.splitlines()
-        matches = []
-        for i, line in enumerate(lines, 1):
-            haystack = line.lower()
-            if any(pattern in haystack for pattern in lowered_patterns):
-                start = max(1, i - 1)
-                end = min(len(lines), i + 1)
-                matches.append(self._open_lines(file_ref, start, end))
-                if len(matches) >= limit:
-                    break
-        return matches
 
     def open(self, target: str, location: str = "all") -> OpenResult:
         file_ref = self._resolve_target(target)
@@ -1387,15 +1247,6 @@ class PageIndexFileSystem:
         metadata = file.get("metadata") or {}
         if not isinstance(metadata, dict):
             raise ValueError("metadata must be a JSON object")
-        legacy_value_key = "derived_" + "metadata"
-        legacy_policy_key = "metadata_" + "generation_policy"
-        legacy_status_key = "metadata_" + "generation_status"
-        if legacy_value_key in file:
-            raise ValueError("legacy generated metadata map has been removed; put values in metadata")
-        if legacy_policy_key in file:
-            raise ValueError("legacy metadata policy key has been renamed to metadata_policy")
-        if legacy_status_key in file:
-            raise ValueError("legacy metadata status key has been renamed to metadata_status")
         self._validate_register_metadata(metadata)
         external_id = file.get("external_id")
         content = file.get("content") or ""
@@ -1946,93 +1797,6 @@ class PageIndexFileSystem:
     def _resolve_target(self, target: str) -> str:
         return self.store.resolve_file_ref(target)
 
-    def _should_use_semantic_retrieval(
-        self,
-        query: Union[str, list[str], None],
-        scope: Optional[dict[str, Any]],
-    ) -> bool:
-        if self.semantic_retrieval_backend is None:
-            return False
-        if not self._query_text(query):
-            return False
-        if not scope:
-            return True
-        return bool(scope.get("recursive", True))
-
-    def _semantic_search(
-        self,
-        query: Union[str, list[str], None],
-        *,
-        scope: Optional[dict[str, Any]],
-        metadata_filter: Optional[dict[str, Any]],
-        limit: int,
-        channel: str | None = None,
-    ) -> list[SearchResult]:
-        if self.semantic_retrieval_backend is None:
-            return []
-        filters = self._semantic_filters_for_scope(scope)
-        fetch_limit = max(limit * 10, 50)
-        query_text = self._query_text(query)
-        if channel:
-            search_channel = getattr(self.semantic_retrieval_backend, "search_channel", None)
-            if search_channel is None:
-                return []
-            candidates = search_channel(
-                channel,
-                query_text,
-                limit=fetch_limit,
-                filters=filters,
-            )
-        else:
-            candidates = self.semantic_retrieval_backend.search(
-                query_text,
-                limit=fetch_limit,
-                filters=filters,
-            )
-        results: list[SearchResult] = []
-        seen: set[str] = set()
-        scope_path = self._scope_folder_path(scope)
-        for candidate in candidates:
-            try:
-                file_ref = self.store.resolve_file_ref(candidate.document_id)
-            except KeyError:
-                continue
-            if file_ref in seen:
-                continue
-            if not self.store.file_matches(file_ref, scope=scope, metadata_filter=metadata_filter):
-                continue
-            seen.add(file_ref)
-            entry = self.store.get_file(file_ref)
-            folder_paths = [
-                folder["path"]
-                for folder in self.store.folder_memberships(file_ref)
-            ]
-            folder_path = self._preferred_folder_path(folder_paths, scope_path, entry.folder_path)
-            results.append(
-                SearchResult(
-                    file_ref=file_ref,
-                    external_id=entry.external_id,
-                    title=entry.title,
-                    snippet=candidate.snippet or entry.descriptor,
-                    folder_path=folder_path,
-                    folder_paths=folder_paths,
-                    metadata=entry.metadata,
-                    metadata_status=entry.metadata_status,
-                    source_path=entry.source_path,
-                    id=entry.external_id or file_ref,
-                    document_id=entry.external_id,
-                    name=entry.title,
-                    description=entry.descriptor,
-                    status=entry.pageindex_tree_status,
-                    pageNum=None,
-                    createdAt=None,
-                    folderId=None,
-                )
-            )
-            if len(results) >= limit:
-                break
-        return results
-
     @staticmethod
     def _semantic_candidate_score(candidate: Any) -> float | None:
         try:
@@ -2347,135 +2111,6 @@ class PageIndexFileSystem:
             return None
         path = scope.get("folder_path") or scope.get("path")
         return normalize_path(path) if path else None
-
-    @classmethod
-    def _semantic_filters_for_scope(cls, scope: Optional[dict[str, Any]]) -> dict[str, Any]:
-        path = cls._scope_folder_path(scope)
-        if not path or path == "/":
-            return {}
-        source_type = cls._source_type_filter_from_path(path)
-        return {"source_type": source_type} if source_type else {}
-
-    @staticmethod
-    def _source_type_filter_from_path(path: str) -> str:
-        segments = [segment for segment in path.strip("/").split("/") if segment]
-        if not segments:
-            return ""
-        if segments[0] == SEMANTIC_FOLDER_ROOT.strip("/"):
-            segments = segments[1:]
-        if not segments:
-            return ""
-        first_segment = segments[0]
-        if first_segment.startswith("source_type="):
-            return first_segment.split("=", 1)[1].replace("-", "_")
-        if path.startswith(f"{SEMANTIC_FOLDER_ROOT}/"):
-            return ""
-        return ""
-
-    @classmethod
-    def _validate_semantic_folder_projection_item(
-        cls,
-        item: dict[str, Any],
-        allowed_extension_fields: set[str],
-    ) -> None:
-        path = item.get("folder_path") or item.get("path")
-        if not path:
-            raise ValueError("Semantic Folder Projection items must include a folder path")
-        cls._validate_semantic_folder_projection_path(str(path))
-        allowed_fields = (
-            SEMANTIC_FOLDER_BASE_FIELDS
-            | SEMANTIC_FOLDER_SYSTEM_FIELDS
-            | allowed_extension_fields
-        )
-        if item.get("dataset_doc_uuid"):
-            raise ValueError(
-                "dataset_doc_uuid is not allowed in Semantic Folder Projection memberships; "
-                "use file_key or file_ref"
-            )
-        fields = []
-        explicit_field = cls._canonical_semantic_folder_field_name(item.get("field"))
-        if explicit_field:
-            fields.append(explicit_field)
-        fields.extend(cls._semantic_folder_projection_fields_from_path(str(path)))
-        for payload_key in ("metadata", "folder_metadata"):
-            cls._validate_semantic_folder_projection_metadata_payload(
-                item.get(payload_key),
-                allowed_fields,
-            )
-        for field in fields:
-            if is_semantic_folder_forbidden_field(field) or field not in allowed_fields:
-                raise ValueError(f"Field is not allowed for Semantic Folder Projection: {field}")
-
-    @staticmethod
-    def _validate_semantic_folder_projection_path(path: str) -> str:
-        normalized = normalize_path(path)
-        if normalized != SEMANTIC_FOLDER_ROOT and not normalized.startswith(
-            f"{SEMANTIC_FOLDER_ROOT}/"
-        ):
-            raise ValueError("Semantic Folder Projection paths must be under /semantic")
-        return normalized
-
-    @classmethod
-    def _semantic_folder_projection_fields_from_path(cls, path: str) -> list[str]:
-        normalized = cls._validate_semantic_folder_projection_path(path)
-        fields: list[str] = []
-        for segment in normalized.strip("/").split("/")[1:]:
-            if "=" not in segment:
-                continue
-            field = cls._canonical_semantic_folder_field_name(
-                segment.split("=", 1)[0]
-            )
-            if field:
-                fields.append(field)
-        return fields
-
-    @classmethod
-    def _validate_semantic_folder_projection_metadata_payload(
-        cls,
-        payload: Any,
-        allowed_fields: set[str],
-    ) -> None:
-        if isinstance(payload, dict):
-            for key, value in payload.items():
-                key_text = str(key)
-                key_field = cls._canonical_semantic_folder_field_name(key)
-                if is_semantic_folder_forbidden_field(key_field):
-                    raise ValueError(
-                        "Forbidden metadata field in Semantic Folder Projection payload: "
-                        f"{key_text}"
-                    )
-                if key_field in {"field", "source_field", "metadata_field"}:
-                    field = cls._canonical_semantic_folder_field_name(value)
-                    if field and (
-                        is_semantic_folder_forbidden_field(field)
-                        or field not in allowed_fields
-                    ):
-                        raise ValueError(
-                            f"Field is not allowed for Semantic Folder Projection: {field}"
-                        )
-                cls._validate_semantic_folder_projection_metadata_payload(value, allowed_fields)
-        elif isinstance(payload, list):
-            for item in payload:
-                cls._validate_semantic_folder_projection_metadata_payload(item, allowed_fields)
-        elif isinstance(payload, str):
-            field = cls._canonical_semantic_folder_field_name(payload)
-            if is_semantic_folder_forbidden_field(field):
-                raise ValueError(
-                    "Forbidden metadata field label in Semantic Folder Projection payload: "
-                    f"{payload}"
-                )
-
-    @staticmethod
-    def _canonical_semantic_folder_field_name(value: Any) -> str:
-        return canonical_semantic_folder_field_name(value)
-
-    @staticmethod
-    def _semantic_folder_projection_document_id(membership: dict[str, Any]) -> str:
-        for key in ("file_key", "file_ref", "document_ref"):
-            value = str(membership.get(key) or "").strip()
-            if value:
-                return value
-        raise ValueError("Semantic Folder Projection membership is missing file_key or file_ref")
 
     @staticmethod
     def _query_text(query: Union[str, list[str], None]) -> str:

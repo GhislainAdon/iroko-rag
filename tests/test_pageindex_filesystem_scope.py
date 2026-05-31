@@ -308,7 +308,7 @@ def test_browse_supports_fixed_size_one_based_pagination_and_metadata_filter(tmp
     assert filtered["data"][0]["summary"] == "summary for doc_10"
 
 
-def test_browse_scopes_semantic_search_before_candidate_limit(tmp_path):
+def test_browse_scopes_channel_candidates_before_candidate_limit(tmp_path):
     import json
 
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
@@ -738,20 +738,6 @@ def test_broad_recursive_grep_suggests_browse_not_removed_semantic_commands(tmp_
     assert "semantic-grep" not in rendered
 
 
-def test_semantic_search_scope_filters_explicit_source_type_facets():
-    from pageindex.filesystem import PageIndexFileSystem
-
-    assert PageIndexFileSystem._semantic_filters_for_scope(
-        {"folder_path": "/source_type=google-drive"}
-    ) == {"source_type": "google_drive"}
-    assert PageIndexFileSystem._semantic_filters_for_scope(
-        {"folder_path": "/semantic/source_type=google-drive"}
-    ) == {"source_type": "google_drive"}
-    assert PageIndexFileSystem._semantic_filters_for_scope(
-        {"folder_path": "/documents"}
-    ) == {}
-
-
 def test_grep_source_file_requires_terms_on_same_line(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
 
@@ -904,7 +890,7 @@ def test_existing_summary_projection_index_dimension_mismatch_rejects_retrieval(
         filesystem.configure_existing_projection_retrieval()
 
 
-def test_default_semantic_search_uses_summary_projection_when_only_summary_available(tmp_path):
+def test_browse_semantic_files_uses_summary_projection_when_only_summary_available(tmp_path):
     from pageindex.filesystem import PageIndexFileSystem
     from pageindex.filesystem.hybrid_projection import HybridProjectionSearchBackend
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult
@@ -961,9 +947,14 @@ def test_default_semantic_search_uses_summary_projection_when_only_summary_avail
         },
     )
 
-    assert filesystem.search("purchase order exposure", semantic=False) == []
+    assert filesystem.search("purchase order exposure") == []
 
-    results = filesystem.search("purchase order exposure", semantic=True)
+    results = filesystem.browse_semantic_files(
+        "/documents",
+        "purchase order exposure",
+        recursive=True,
+        page_size=5,
+    )
 
-    assert [result.external_id for result in results] == ["doc_summary_only"]
-    assert results[0].snippet == "summary_vector rank=1"
+    assert [item["external_id"] for item in results["data"]] == ["doc_summary_only"]
+    assert results["data"][0]["snippet"] == "summary_vector rank=1"

@@ -18,7 +18,7 @@ class PIFSCommandError(ValueError):
 class PIFSCommandExecutor:
     FORBIDDEN_SUBSTRINGS = (";", "`", "$(", "||", "\n", "\r")
     FORBIDDEN_TOKENS = {"|", ">", "<", ">>", "<<", "&"}
-    BASE_ALLOWED_COMMANDS = {
+    COMMAND_NAMES = {
         "ls",
         "tree",
         "find",
@@ -30,9 +30,7 @@ class PIFSCommandExecutor:
         "tail",
         "sed",
     }
-    ALLOWED_COMMANDS = BASE_ALLOWED_COMMANDS
     ALLOWED_PIPE_FILTERS = {"head", "tail", "grep", "sed"}
-    COMMAND_METHODS = {}
     MAX_CHAINED_COMMANDS = 3
     MAX_PIPE_COMMANDS = 3
     MAX_LS_LIMIT = 100
@@ -65,7 +63,7 @@ class PIFSCommandExecutor:
         self.query_context = query_context
 
     def allowed_commands(self) -> set[str]:
-        return set(self.BASE_ALLOWED_COMMANDS)
+        return set(self.COMMAND_NAMES)
 
     def command_capabilities(self) -> dict[str, Any]:
         return {
@@ -149,8 +147,7 @@ class PIFSCommandExecutor:
         name = tokens[0]
         if name not in self.allowed_commands():
             raise PIFSCommandError(f"Unsupported command: {name}")
-        method_name = self.COMMAND_METHODS.get(name, f"_cmd_{name}")
-        data = getattr(self, method_name)(tokens[1:])
+        data = getattr(self, f"_cmd_{name}")(tokens[1:])
         return self._render(data, json_output=json_output, command_name=name)
 
     def _execute_pipe_filter(self, input_text: str, command: str) -> str:
@@ -375,7 +372,6 @@ class PIFSCommandExecutor:
             scope=scope,
             metadata_filter=where,
             limit=limit,
-            semantic=False,
         )
 
     def _cmd_grep(self, args: list[str]) -> Any:
@@ -423,7 +419,6 @@ class PIFSCommandExecutor:
                         scope={"folder_path": normalized, "recursive": False},
                         metadata_filter=where,
                         limit=limit,
-                        semantic=False,
                     )
                     if direct_results:
                         return {
@@ -471,7 +466,6 @@ class PIFSCommandExecutor:
                 scope={"folder_path": normalized, "recursive": recursive},
                 metadata_filter=where,
                 limit=limit,
-                semantic=False,
             )
             if not results and where is None:
                 source_hits = self._grep_source_file_hits(normalized, query, limit=limit)
@@ -1240,23 +1234,6 @@ class PIFSCommandExecutor:
             return f"{folder}/{title}" if folder else f"/{title}"
         return str(item.get("source_path") or item.get("external_id") or file_ref or "-")
 
-    def _stable_file_target_path(self, item: dict[str, Any]) -> str:
-        file_ref = str(item.get("file_ref") or "").strip()
-        source_path = str(item.get("source_path") or "").strip()
-        if source_path:
-            target = "/" + source_path.strip("/")
-            try:
-                if not file_ref or self.filesystem.store.resolve_file_ref(target) == file_ref:
-                    return target
-            except KeyError:
-                pass
-        external_id = str(item.get("external_id") or "").strip()
-        if external_id:
-            return external_id
-        if file_ref:
-            return file_ref
-        return str(item.get("external_id") or item.get("file_ref") or "-")
-
     def _semantic_retrieval_query(self, query: str) -> str:
         query = str(query or "").strip()
         context = str(self.query_context or "").strip()
@@ -1326,7 +1303,6 @@ class PIFSCommandExecutor:
                 scope={"folder_path": child["path"], "recursive": True},
                 metadata_filter=metadata_filter,
                 limit=max(limit, 50),
-                semantic=False,
             )
             if not results:
                 continue

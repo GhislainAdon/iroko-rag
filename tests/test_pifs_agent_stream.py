@@ -263,7 +263,7 @@ class PIFSAgentStreamTest(unittest.TestCase):
         ):
             self.assertNotIn(old_command, prompt_surface)
 
-    def test_demo_prompt_uses_browse_strategy_and_not_legacy_semantic_search(self):
+    def test_demo_prompt_uses_browse_strategy_and_not_old_vector_commands(self):
         demo_prompt = load_demo_agent_prompt()
 
         self.assertIn("Start with ls or tree", demo_prompt)

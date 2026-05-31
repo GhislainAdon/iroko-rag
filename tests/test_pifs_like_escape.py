@@ -46,7 +46,6 @@ def test_descendant_folder_filter_treats_underscore_literally(tmp_path):
     folder_id = filesystem.folder_info("/proj_1")["folder_id"]
     scoped_results = filesystem.search(
         scope={"folder_id": folder_id, "recursive": True},
-        semantic=False,
         limit=10,
     )
     ranked_folders = {
@@ -102,12 +101,10 @@ def test_metadata_contains_treats_percent_and_underscore_literally(tmp_path):
 
     percent_results = filesystem.search(
         metadata_filter={"status": {"$contains": "100% done"}},
-        semantic=False,
         limit=10,
     )
     underscore_results = filesystem.search(
         metadata_filter={"status": {"$contains": "build_alpha"}},
-        semantic=False,
         limit=10,
     )
 

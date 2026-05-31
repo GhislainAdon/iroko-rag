@@ -15,28 +15,17 @@ from .semantic_index import SQLiteVecSemanticIndex, SemanticIndexError, Semantic
 
 
 INDEX_BY_CHANNEL = {
-    "metadata": "metadata_composite_vector",
     "summary": "summary_only_vector",
     "entity": "entity_vectors",
-    "constraint": "constraint_vectors",
     "relation": "relation_vectors",
 }
-HYBRID_ENTITY_RELATION_CHANNELS = ("metadata", "entity", "constraint", "relation")
 SEMANTIC_TOOL_CHANNELS = ("summary", "entity", "relation")
-HYBRID_ENTITY_RELATION_WEIGHTS = {
-    "metadata": 0.25,
-    "entity": 0.25,
-    "relation": 0.30,
-    "constraint": 0.20,
-}
 
 
 @dataclass(frozen=True)
 class QueryProjection:
     entities: list[str]
     relations: list[str]
-    constraints: list[str]
-    expected_answer_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -52,7 +41,7 @@ class HybridProjectionCandidate:
 
 
 class HybridProjectionSearchBackend:
-    """Hybrid entity/relation/vector retrieval over rebuildable projection indexes.
+    """Semantic channel retrieval over rebuildable projection indexes.
 
     The SQLite catalog remains the source of truth. This backend only reads
     external sqlite-vec projection indexes and returns candidate document ids
@@ -68,7 +57,6 @@ class HybridProjectionSearchBackend:
         embedding_model: str,
         embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_cache_path: str | Path | None = None,
-        per_channel_limit: int = 100,
         fetch_multiplier: int = 100,
     ) -> None:
         self.index_dir = Path(index_dir).expanduser()
@@ -82,7 +70,6 @@ class HybridProjectionSearchBackend:
             if embedding_cache_path is not None
             else self.index_dir / "embedding_cache.sqlite"
         )
-        self.per_channel_limit = per_channel_limit
         self.fetch_multiplier = fetch_multiplier
         self.indexes = {
             channel: SQLiteVecSemanticIndex(self.index_dir / f"{index_name}.sqlite")
@@ -113,35 +100,6 @@ class HybridProjectionSearchBackend:
             embedding_dimensions=embedding_dimensions,
             **kwargs,
         )
-
-    def search(
-        self,
-        query: str,
-        *,
-        limit: int = 10,
-        filters: dict[str, Any] | None = None,
-    ) -> list[HybridProjectionCandidate]:
-        query = normalize_text(query)
-        if not query:
-            return []
-        projection = heuristic_query_projection(query)
-        channels = tuple(
-            channel
-            for channel in HYBRID_ENTITY_RELATION_CHANNELS
-            if self._channel_document_count(channel) > 0
-        )
-        if not channels:
-            if self._channel_document_count("summary") > 0:
-                return self.search_channel("summary", query, limit=limit, filters=filters)
-            return []
-        channel_hits = self._search_channels(
-            query=query,
-            projection=projection,
-            limit=max(limit, self.per_channel_limit),
-            filters=filters,
-            channels=channels,
-        )
-        return aggregate_hybrid_entity_relation(channel_hits, projection)[:limit]
 
     def search_channel(
         self,
@@ -187,7 +145,7 @@ class HybridProjectionSearchBackend:
             "embedding_provider": self.embedding_provider,
             "embedding_model": self.embedding_model,
             "embedding_dimensions": self.embedding_dimensions,
-            "strategy": "hybrid_entity_relation_vector",
+            "strategy": "semantic_channel_vector",
             "available_channels": list(self.available_channels()),
             "channels": {
                 channel: self._safe_channel_info(channel)
@@ -220,36 +178,6 @@ class HybridProjectionSearchBackend:
                 "error": str(exc),
             }
         return {**info, "available": int(info.get("document_count") or 0) > 0}
-
-    def _search_channels(
-        self,
-        *,
-        query: str,
-        projection: QueryProjection,
-        limit: int,
-        filters: dict[str, Any] | None,
-        channels: tuple[str, ...],
-    ) -> dict[str, list[SemanticSearchResult]]:
-        query_texts = {
-            channel: query_text_for_channel(channel, query, projection)
-            for channel in channels
-        }
-        vectors = self.embedding_cache.embed_texts(
-            [query_texts[channel] for channel in channels],
-            provider=self.embedding_provider,
-            model=self.cache_model,
-            embedder=self.embedder,
-            batch_size=1,
-        )
-        return {
-            channel: self.indexes[channel].search(
-                vector,
-                limit=limit,
-                filters=filters,
-                fetch_multiplier=self.fetch_multiplier,
-            )
-            for channel, vector in zip(channels, vectors)
-        }
 
 
 class EmbeddingCache:
@@ -368,12 +296,10 @@ def make_embedder(provider: str, model: str, *, dimensions: int, timeout: float)
 
 
 def query_text_for_channel(channel: str, query: str, projection: QueryProjection) -> str:
-    if channel in {"metadata", "summary"}:
+    if channel == "summary":
         return query
     if channel == "entity":
         return compact_join(projection.entities, limit=24) or query
-    if channel == "constraint":
-        return compact_join(projection.constraints, limit=24) or query
     if channel == "relation":
         return "\n".join(projection.relations) or query
     raise ValueError(f"unknown semantic channel: {channel}")
@@ -405,87 +331,6 @@ def rank_single_semantic_channel(
     return rows
 
 
-def aggregate_hybrid_entity_relation(
-    channel_hits: dict[str, list[SemanticSearchResult]],
-    projection: QueryProjection,
-) -> list[HybridProjectionCandidate]:
-    by_doc: dict[str, dict[str, Any]] = {}
-    for channel, results in channel_hits.items():
-        weight = HYBRID_ENTITY_RELATION_WEIGHTS[channel]
-        seen_in_channel = set()
-        for rank, result in enumerate(results, 1):
-            doc_id = str(result.external_id or result.file_ref)
-            if doc_id in seen_in_channel:
-                continue
-            seen_in_channel.add(doc_id)
-            item = by_doc.setdefault(
-                doc_id,
-                {
-                    "document_id": doc_id,
-                    "score": 0.0,
-                    "sources": [],
-                    "source_type": result.source_type,
-                    "source_path": result.source_path,
-                    "title": result.title,
-                    "metadata": result.metadata,
-                },
-            )
-            item["score"] += weight * (1 / (60 + rank))
-            item["sources"].append({"channel": channel, "rank": rank, "distance": result.distance})
-    candidates = []
-    for item in by_doc.values():
-        item["score"] += exact_match_bonus(item, projection)
-        candidates.append(
-            HybridProjectionCandidate(
-                document_id=item["document_id"],
-                score=float(item["score"]),
-                sources=item["sources"],
-                source_type=item["source_type"],
-                source_path=item["source_path"],
-                title=item["title"],
-                metadata=item["metadata"],
-                snippet=hybrid_snippet(item),
-            )
-        )
-    return sorted(
-        candidates,
-        key=lambda item: (
-            -item.score,
-            min(source["rank"] for source in item.sources),
-            item.document_id,
-        ),
-    )
-
-
-def exact_match_bonus(item: dict[str, Any], projection: QueryProjection) -> float:
-    haystack = json.dumps(
-        {
-            "title": item.get("title", ""),
-            "source_path": item.get("source_path", ""),
-            "metadata": item.get("metadata", {}),
-        },
-        ensure_ascii=False,
-    ).lower()
-    terms = [*projection.entities[:8], *projection.constraints[:6]]
-    matched = 0
-    for term in terms:
-        normalized = str(term).lower().strip()
-        if len(normalized) >= 3 and normalized in haystack:
-            matched += 1
-    return min(0.02, matched * 0.004)
-
-
-def hybrid_snippet(item: dict[str, Any]) -> str:
-    channels = ", ".join(
-        f"{source['channel']}@{source['rank']}" for source in item.get("sources", [])[:4]
-    )
-    topic = str((item.get("metadata") or {}).get("topic") or "").strip()
-    parts = [f"hybrid_entity_relation_vector {channels}"]
-    if topic:
-        parts.append(f"topic: {topic}")
-    return "; ".join(parts)
-
-
 def heuristic_query_projection(question: str) -> QueryProjection:
     entities = dedupe(
         [
@@ -493,19 +338,11 @@ def heuristic_query_projection(question: str) -> QueryProjection:
             *keyword_terms(question)[:16],
         ]
     )[:16]
-    constraints = dedupe(
-        [
-            *extract_constraint_terms(question),
-            *numeric_terms(question),
-        ]
-    )[:12]
     predicate = infer_query_predicate(question)
     subject = entities[0] if entities else "question"
     return QueryProjection(
         entities=entities,
         relations=[f"{subject} | {predicate} | {question}"],
-        constraints=constraints,
-        expected_answer_type=infer_answer_type(question),
     )
 
 
@@ -554,24 +391,6 @@ def keyword_terms(text: str) -> list[str]:
     return dedupe(terms)
 
 
-def extract_constraint_terms(text: str) -> list[str]:
-    constraints = []
-    for pattern in [
-        r"\b(?:must|should|required|requires?|default(?:s)?|limit(?:s)?|maximum|minimum)\b[^.!?\n]{0,120}",
-        r"\b[A-Za-z_][A-Za-z0-9_]{2,}\s*(?:=|:)\s*[A-Za-z0-9_.:/-]+",
-    ]:
-        constraints.extend(match.strip() for match in re.findall(pattern, text, flags=re.IGNORECASE))
-    return dedupe(constraints)
-
-
-def numeric_terms(text: str) -> list[str]:
-    return re.findall(
-        r"\b\d+(?:\.\d+)?\s*(?:MiB|GiB|MB|GB|ms|sec|seconds|minutes|hours|days|%|tokens?|req/s|rps)\b",
-        text,
-        flags=re.IGNORECASE,
-    )
-
-
 def infer_query_predicate(question: str) -> str:
     lowered = question.lower()
     rules = [
@@ -587,19 +406,6 @@ def infer_query_predicate(question: str) -> str:
         if any(needle in lowered for needle in needles):
             return predicate
     return "asks_about"
-
-
-def infer_answer_type(question: str) -> str:
-    lowered = question.lower()
-    if "how many" in lowered or "limit" in lowered or "size" in lowered:
-        return "number_or_limit"
-    if lowered.startswith("who"):
-        return "person_or_team"
-    if lowered.startswith("when"):
-        return "date_or_time"
-    if "why" in lowered or "caused" in lowered:
-        return "cause"
-    return "fact"
 
 
 def dedupe(values: Any) -> list[str]:

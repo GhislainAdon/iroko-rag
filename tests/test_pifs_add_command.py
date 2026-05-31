@@ -158,13 +158,13 @@ def test_add_configures_semantic_retrieval_in_same_filesystem_instance(tmp_path)
     filesystem.add_file(source, "/documents")
 
     assert filesystem.semantic_retrieval_channels() == ("summary",)
-    results = filesystem.search_semantic_channel(
-        "summary",
+    results = filesystem.browse_semantic_files(
+        "/documents",
         "semantic recall",
-        scope={"folder_path": "/documents", "recursive": True},
-        limit=5,
+        recursive=True,
+        page_size=5,
     )
-    assert [result.source_path for result in results] == ["documents/semantic.txt"]
+    assert [item["source_path"] for item in results["data"]] == ["documents/semantic.txt"]
 
 
 def test_add_markdown_builds_pageindex_tree_from_copied_artifact(tmp_path, monkeypatch):
