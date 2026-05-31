@@ -14,6 +14,7 @@ from .metadata_generation import (
     MetadataGenerationResult,
     MetadataGenerator,
 )
+from .embedding_defaults import DEFAULT_EMBEDDING_DIMENSIONS
 from .semantic_folder_policy import (
     SEMANTIC_FOLDER_BASE_FIELDS,
     SEMANTIC_FOLDER_ROOT,
@@ -76,6 +77,11 @@ PROJECTION_INDEX_STATUSES = {
 }
 
 SEMANTIC_RETRIEVAL_CHANNELS = ("summary", "entity", "relation")
+SEMANTIC_PROJECTION_INDEX_NAMES = {
+    "summary": "summary_only_vector",
+    "entity": "entity_vectors",
+    "relation": "relation_vectors",
+}
 PAGEINDEX_DOCUMENT_SUFFIXES = {".pdf", ".md", ".markdown"}
 PAGEINDEX_DOCUMENT_CONTENT_TYPES = {
     "application/pdf",
@@ -103,7 +109,7 @@ class PageIndexFileSystem:
         summary_projection_index_dir: Union[str, Path, None] = None,
         summary_projection_embedding_provider: str = "openai",
         summary_projection_embedding_model: str = "text-embedding-3-small",
-        summary_projection_embedding_dimensions: int = 256,
+        summary_projection_embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         summary_projection_embedding_timeout: float = 60,
     ):
         self.workspace = Path(workspace).expanduser()
@@ -248,48 +254,43 @@ class PageIndexFileSystem:
         """Attach semantic retrieval to already-built projection indexes.
 
         Register-time generation owns building the index files. Opening an
-        existing workspace should still expose semantic browse, without forcing
-        a re-register step.
+        existing workspace should still expose semantic retrieval when the
+        configured embedding dimensions match the existing index.
         """
         if self.semantic_retrieval_backend is not None:
             return bool(self.semantic_retrieval_channels())
         index_config = self._existing_projection_index_config()
         if index_config is None:
             return False
-        metadata = dict(index_config.get("metadata") or {})
-        embedding_provider = str(
-            metadata.get("embedding_provider")
-            or self.summary_projection_embedding_provider
-        )
-        embedding_model = str(
-            metadata.get("embedding_model")
-            or self.summary_projection_embedding_model
-        )
-        embedding_dimensions = int(
-            metadata.get("embedding_dimensions")
-            or index_config.get("dimension")
-            or self.summary_projection_embedding_dimensions
-        )
+        existing_dimension = int(index_config.get("dimension") or 0)
+        if existing_dimension != self.summary_projection_embedding_dimensions:
+            raise RuntimeError(
+                "summary projection index dimension mismatch: "
+                f"{index_config.get('db_path') or self.summary_projection_index_dir} "
+                f"was built with dimension {existing_dimension}, but configured "
+                "summary_projection_embedding_dimensions is "
+                f"{self.summary_projection_embedding_dimensions}. Rebuild the "
+                "projection index or use a matching embedding configuration."
+            )
         self.configure_hybrid_projection_retrieval(
             self.summary_projection_index_dir,
-            embedding_provider=embedding_provider,
-            embedding_model=embedding_model,
-            embedding_dimensions=embedding_dimensions,
+            embedding_provider=self.summary_projection_embedding_provider,
+            embedding_model=self.summary_projection_embedding_model,
+            embedding_dimensions=self.summary_projection_embedding_dimensions,
             embedding_timeout=self.summary_projection_embedding_timeout,
         )
         return bool(self.semantic_retrieval_channels())
 
     def _existing_projection_index_config(self) -> dict[str, Any] | None:
-        from .hybrid_projection import INDEX_BY_CHANNEL
-        from .semantic_index import SQLiteVecSemanticIndex
-
         for channel in SEMANTIC_RETRIEVAL_CHANNELS:
-            index_name = INDEX_BY_CHANNEL.get(channel)
+            index_name = SEMANTIC_PROJECTION_INDEX_NAMES.get(channel)
             if not index_name:
                 continue
             index_path = self.summary_projection_index_dir / f"{index_name}.sqlite"
             if not index_path.exists():
                 continue
+            from .semantic_index import SQLiteVecSemanticIndex
+
             try:
                 info = SQLiteVecSemanticIndex(index_path).info()
             except Exception:
@@ -656,7 +657,7 @@ class PageIndexFileSystem:
         *,
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
-        embedding_dimensions: int = 256,
+        embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_timeout: float = 60,
         per_channel_limit: int = 100,
         fetch_multiplier: int = 100,

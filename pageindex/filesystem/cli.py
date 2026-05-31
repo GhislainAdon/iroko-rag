@@ -162,8 +162,7 @@ def _parse_agent_command(
 
 def _filesystem_from_workspace(workspace: str) -> PageIndexFileSystem:
     filesystem = PageIndexFileSystem(Path(workspace).expanduser())
-    with contextlib.suppress(Exception):
-        filesystem.configure_existing_projection_retrieval()
+    filesystem.configure_existing_projection_retrieval()
     return filesystem
 
 

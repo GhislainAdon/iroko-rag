@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .embedding_defaults import DEFAULT_EMBEDDING_DIMENSIONS
 from .semantic_index import SQLiteVecSemanticIndex, SemanticIndexError, SemanticSearchResult
 
 
@@ -65,7 +66,7 @@ class HybridProjectionSearchBackend:
         embedder: Any,
         embedding_provider: str,
         embedding_model: str,
-        embedding_dimensions: int = 256,
+        embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_cache_path: str | Path | None = None,
         per_channel_limit: int = 100,
         fetch_multiplier: int = 100,
@@ -95,7 +96,7 @@ class HybridProjectionSearchBackend:
         *,
         embedding_provider: str = "openai",
         embedding_model: str = "text-embedding-3-small",
-        embedding_dimensions: int = 256,
+        embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_timeout: float = 60,
         **kwargs: Any,
     ) -> "HybridProjectionSearchBackend":
