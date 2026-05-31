@@ -4,7 +4,7 @@ PageIndex FileSystem (PIFS) agent demo.
 This mirrors examples/agentic_vectorless_rag_demo.py, but exposes a corpus
 through the PageIndex FileSystem shell instead of direct PageIndex document
 tools. The agent receives one read-only bash-like PIFS tool and must retrieve
-evidence through commands such as ls, tree, find, grep, search-summary,
+evidence through commands such as ls, tree, find, grep, browse,
 cat <path> --structure, cat <path> --page, and cat <path> --node.
 
 The demo registers supported files under examples/documents. When a matching
@@ -72,9 +72,9 @@ Retrieval strategy:
   or stable file_ref/document ids. Do not invent temporary ref_N aliases.
 - Folder paths such as /documents are positional command targets; do not put
   folder paths inside --where.
-- Use search-summary when available to find likely documents.
+- Use browse when available to find likely documents by semantic relevance.
   Quote multi-word queries and include a path, for example:
-  search-summary "Federal Reserve supervision regulation" /documents
+  browse /documents "Federal Reserve supervision regulation"
 - Use find --where only with JSON metadata DSL, for example:
   find /documents --where '{"file_format":"pdf"}'
 - Use grep -R only for lexical evidence; do not treat semantic candidates as
@@ -642,15 +642,15 @@ def run_smoke_commands(
         verbose=verbose,
     )
 
-    command = 'search-summary "Federal Reserve annual report supervision regulation section page range" /documents'
+    command = 'browse /documents "Federal Reserve annual report supervision regulation section page range"'
     summary = execute_json_command(json_executor, command)
     summary_hits = ((summary.get("data") or {}).get("data") or [])
     if summary_hits:
-        summary_result = f"{len(summary_hits)} summary-vector candidates; top={summary_hits[0].get('external_id')}"
+        summary_result = f"{len(summary_hits)} browse candidates; top={summary_hits[0].get('external_id')}"
     else:
-        summary_result = "summary-vector command is available, but this tiny two-doc demo returned no candidates"
+        summary_result = "browse is available, but this tiny two-doc demo returned no candidates"
     show_capability(
-        label="Semantic summary search",
+        label="Semantic browse",
         command=command,
         result=summary_result,
         raw=shell_executor.execute(command) if verbose else "",

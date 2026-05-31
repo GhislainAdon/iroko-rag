@@ -56,11 +56,13 @@ class ChannelBackend:
     def __init__(self, document_id, channels=("summary", "entity", "relation")):
         self.document_id = document_id
         self.channels = channels
+        self.calls = []
 
     def available_channels(self):
         return self.channels
 
     def search_channel(self, channel, query, *, limit=10, filters=None):
+        self.calls.append((channel, query, limit, filters))
         return [
             SimpleNamespace(
                 document_id=self.document_id,
@@ -154,10 +156,30 @@ def test_browse_is_agent_visible_semantic_command(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
 
     filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    filesystem.semantic_retrieval_backend = ChannelBackend("dsid_report")
     executor = PIFSCommandExecutor(filesystem)
 
-    assert "browse" in executor.allowed_commands()
-    assert 'browse [-R] <folder> "<query>"' in executor.describe_available_command_surfaces()
+    allowed = executor.allowed_commands()
+    surface = executor.describe_available_command_surfaces()
+
+    assert "browse" in allowed
+    assert 'browse [-R] <folder> "<query>"' in surface
+    assert not {
+        "search-summary",
+        "search-entity",
+        "search-relation",
+        "semantic-grep",
+    } & allowed
+    for old_command in (
+        "search-summary",
+        "search-entity",
+        "search-relation",
+        "semantic-grep",
+        "find --name: entity semantic",
+        "find --relation: relation semantic",
+    ):
+        assert old_command not in surface
+    assert executor.command_capabilities()["retrieval"]["semantic"]["commands"] == ["browse"]
 
 
 def test_browse_requires_positional_query_and_rejects_removed_options(tmp_path):
@@ -328,7 +350,6 @@ def test_browse_scopes_semantic_search_before_candidate_limit(tmp_path):
         "doc_direct",
     ]
 
-
 def test_browse_shell_output_uses_fixed_blocks_with_pagination_command(tmp_path):
     import re
 
@@ -447,7 +468,7 @@ def test_browse_shell_path_falls_back_to_unique_locator_when_source_collides(tmp
         filesystem.store.resolve_file_ref("/shared/source.json")
 
 
-def test_semantic_search_scope_keeps_ordinary_folders_out_of_source_type_filters(tmp_path):
+def test_browse_scope_keeps_ordinary_folders_out_of_source_type_filters(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult
 
@@ -483,27 +504,17 @@ def test_semantic_search_scope_keeps_ordinary_folders_out_of_source_type_filters
     executor = PIFSCommandExecutor(filesystem, json_output=True)
 
     result = json.loads(
-        executor.execute('search-summary "Federal Reserve annual report" /documents')
+        executor.execute('browse /documents "Federal Reserve annual report"')
     )
 
-    assert backend.calls[0][2] == {}
-    assert result["data"]["data"][0] == {
-        "path": "/examples/documents/report.pdf",
-        "summary": "Federal Reserve annual report summary",
-        "line_text": "1: Federal Reserve supervision and regulation annual report.",
-    }
+    assert "source_type" not in backend.calls[0][2]
+    assert "source_path" not in backend.calls[0][2]
+    assert result["data"]["data"][0]["path"] == "/examples/documents/report.pdf"
+    assert result["data"]["data"][0]["summary"] == "Federal Reserve annual report summary"
     assert filesystem.store.resolve_file_ref(result["data"]["data"][0]["path"]) == file_ref
 
-    executor.json_output = False
-    rendered = executor.execute('search-summary "Federal Reserve annual report" /documents')
-    assert "path: /examples/documents/report.pdf" in rendered
-    assert "summary: Federal Reserve annual report summary" in rendered
-    assert "line_text: 1: Federal Reserve supervision and regulation annual report." in rendered
-    assert "id=dsid_report" not in rendered
-    assert "file_ref=" not in rendered
 
-
-def test_semantic_search_path_is_unique_source_target_when_titles_collide(tmp_path):
+def test_browse_path_is_unique_source_target_when_titles_collide(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult
 
@@ -552,7 +563,7 @@ def test_semantic_search_path_is_unique_source_target_when_titles_collide(tmp_pa
     filesystem.semantic_retrieval_backend = SummaryBackend("dsid_first")
     executor = PIFSCommandExecutor(filesystem, json_output=True)
 
-    result = json.loads(executor.execute('search-summary "H200 reservations" /documents'))
+    result = json.loads(executor.execute('browse /documents "H200 reservations"'))
 
     assert result["data"]["data"][0]["path"] == "/slack/dsid_first.json"
     assert filesystem.store.resolve_file_ref(result["data"]["data"][0]["path"]) == first_ref
@@ -560,7 +571,7 @@ def test_semantic_search_path_is_unique_source_target_when_titles_collide(tmp_pa
         filesystem.store.resolve_file_ref("/documents/announcements")
 
 
-def test_semantic_search_path_falls_back_when_source_target_is_ambiguous(tmp_path):
+def test_browse_path_falls_back_when_source_target_is_ambiguous(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult
 
@@ -609,14 +620,15 @@ def test_semantic_search_path_falls_back_when_source_target_is_ambiguous(tmp_pat
     filesystem.semantic_retrieval_backend = SummaryBackend("dsid_first")
     executor = PIFSCommandExecutor(filesystem, json_output=True)
 
-    result = json.loads(executor.execute('search-summary "first" /documents'))
+    result = json.loads(executor.execute('browse /documents "first"'))
 
     assert result["data"]["data"][0]["path"] == "dsid_first"
     assert filesystem.store.resolve_file_ref(result["data"]["data"][0]["path"]) == first_ref
 
 
-def test_entity_relation_search_return_minimal_fields_with_summary(tmp_path):
+def test_old_semantic_commands_are_unsupported_even_when_indexes_exist(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+    from pageindex.filesystem.commands import PIFSCommandError
     from pageindex.filesystem.metadata_generation import MetadataGenerationResult
 
     class MetadataGenerator:
@@ -653,31 +665,29 @@ def test_entity_relation_search_return_minimal_fields_with_summary(tmp_path):
     filesystem.semantic_retrieval_backend = ChannelBackend("dsid_market_note")
     executor = PIFSCommandExecutor(filesystem, json_output=True)
 
-    entity = json.loads(executor.execute('search-entity "Federal Reserve" /documents'))
-    assert entity["data"]["data"][0] == {
-        "path": "/examples/documents/market-note.pdf",
-        "summary": "Risk and compliance summary",
-        "line_text": "1: Federal Reserve policy affects Disney valuation.",
-        "entity": "Federal Reserve; Disney",
-    }
+    for command in (
+        'search-summary "Federal Reserve" /documents',
+        'search-entity "Federal Reserve" /documents',
+        'search-relation "Disney valuation" /documents',
+        'semantic-grep -R "Federal Reserve" /documents',
+    ):
+        with pytest.raises(PIFSCommandError, match="Unsupported command"):
+            executor.execute(command)
 
-    relation = json.loads(executor.execute('search-relation "Disney valuation" /documents'))
-    assert relation["data"]["data"][0] == {
-        "path": "/examples/documents/market-note.pdf",
-        "summary": "Risk and compliance summary",
-        "line_text": "1: Federal Reserve policy affects Disney valuation.",
-        "relation": "Federal Reserve affects Disney valuation",
-    }
+    entity = json.loads(
+        executor.execute('browse /documents "Federal Reserve" --space entity')
+    )
+    assert entity["data"]["data"][0]["summary"] == "Risk and compliance summary"
+    assert entity["data"]["data"][0]["path"] == "/examples/documents/market-note.pdf"
 
-    executor.json_output = False
-    rendered = executor.execute('search-entity "Federal Reserve" /documents')
-    assert "path: /examples/documents/market-note.pdf" in rendered
-    assert "summary: Risk and compliance summary" in rendered
-    assert "entity: Federal Reserve; Disney" in rendered
-    assert "file_ref=" not in rendered
+    relation = json.loads(
+        executor.execute('browse /documents "Disney valuation" --space relation')
+    )
+    assert relation["data"]["data"][0]["summary"] == "Risk and compliance summary"
+    assert relation["data"]["data"][0]["path"] == "/examples/documents/market-note.pdf"
 
 
-def test_semantic_search_rejects_unquoted_multi_word_query(tmp_path):
+def test_find_name_is_lexical_and_find_relation_is_not_semantic_alias(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
     from pageindex.filesystem.commands import PIFSCommandError
 
@@ -690,17 +700,42 @@ def test_semantic_search_rejects_unquoted_multi_word_query(tmp_path):
         title="Annual report",
         content="Federal Reserve supervision and regulation annual report.",
     )
-    filesystem.semantic_retrieval_backend = SummaryBackend("dsid_report")
+    backend = ChannelBackend("dsid_report", channels=("entity", "relation"))
+    filesystem.semantic_retrieval_backend = backend
     executor = PIFSCommandExecutor(filesystem, json_output=True)
 
-    with pytest.raises(PIFSCommandError, match="Quote multi-word queries"):
-        executor.execute("search-summary Federal Reserve /documents")
+    result = json.loads(executor.execute("find /documents --name Reserve"))["data"]
 
-    with pytest.raises(PIFSCommandError, match="quote it"):
-        executor.execute("search-summary Federal Reserve")
+    assert result[0]["external_id"] == "dsid_report"
+    assert backend.calls == []
 
-    with pytest.raises(PIFSCommandError, match="does not support regex alternation"):
-        executor.execute('search-summary "Federal|Reserve" /documents')
+    with pytest.raises(PIFSCommandError, match="find --relation is not supported"):
+        executor.execute('find /documents --relation "Reserve regulates report"')
+
+
+def test_broad_recursive_grep_suggests_browse_not_removed_semantic_commands(tmp_path):
+    from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
+
+    filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
+    _register_browse_file(filesystem, "dsid_report", "/documents")
+    filesystem.semantic_retrieval_backend = ChannelBackend("dsid_report")
+    filesystem.store.folder_subtree_thresholds = lambda *args, **kwargs: {
+        "depth_limit": 2,
+        "file_limit": 10,
+        "folder_depth_exceeds_limit": True,
+        "file_count_exceeds_limit": False,
+        "sampled_file_count": 11,
+        "sample_deep_folder_path": "/documents/deep",
+    }
+    executor = PIFSCommandExecutor(filesystem)
+
+    rendered = executor.execute('grep -R "Federal Reserve" /documents')
+
+    assert "# suggested: browse -R /documents 'Federal Reserve'" in rendered
+    assert "search-summary" not in rendered
+    assert "search-entity" not in rendered
+    assert "search-relation" not in rendered
+    assert "semantic-grep" not in rendered
 
 
 def test_semantic_search_scope_filters_explicit_source_type_facets():

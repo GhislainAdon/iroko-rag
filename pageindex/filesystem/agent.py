@@ -35,9 +35,8 @@ document contents in the workspace.
 
 If the user asks what tools or capabilities you have, describe only the PIFS
 virtual shell capabilities available inside this workspace: ls, tree, find,
-stat, grep, cat, and semantic search commands such as search-summary when they
-are available. Do not mention host runtime tools, SDK internals, or orchestration
-helpers that are not part of the PIFS shell.
+stat, grep, cat, and browse. Do not mention host runtime tools, SDK internals,
+or orchestration helpers that are not part of the PIFS shell.
 
 If the user asks a workspace-related topic question without naming a specific
 file, treat it as a retrieval task. Use available PIFS discovery commands to
@@ -45,8 +44,8 @@ look for relevant files and inspect evidence before answering. Ask the user to
 clarify only after a reasonable search cannot identify relevant evidence.
 Do not conclude that no relevant document exists from one failed grep. If grep
 returns no matches for a workspace topic, verify with available semantic
-candidate discovery such as search-summary, or inspect likely document
-structure, before saying that the workspace lacks evidence.
+candidate discovery through browse, or inspect likely document structure,
+before saying that the workspace lacks evidence.
 
 Follow the task prompt for command policy, retrieval strategy, and answer
 format. If the caller needs stricter behavior, pass an explicit system_prompt.
@@ -55,19 +54,18 @@ format. If the caller needs stricter behavior, pass an explicit system_prompt.
 BASH_TOOL_DESCRIPTION = """
 Run a command in the PageIndex FileSystem virtual shell. This is not a real
 operating-system shell. By default the tool is read-only: use ls, tree, find,
-grep, cat, stat, head, tail, sed, and any dynamically available semantic search
-commands described in the workspace context. grep -R is lexical evidence search;
+grep, cat, stat, head, tail, sed, and browse as described in the workspace
+context. grep -R is lexical evidence search;
 grep does not support regex alternation such as "a|b"; run multiple grep
-commands or use search-summary for semantic candidate discovery instead.
-semantic search commands such as search-summary return candidate documents and
-do not guarantee literal text matches or final answer evidence. After choosing
-a likely search-summary candidate, verify the relevant claim with cat before
-answering. Use search-summary when the user asks for summary search, semantic
-search, or vector search and the command is listed as available. Quote
-multi-word semantic queries, for example:
-search-summary "Federal Reserve" /documents. Do not write
-search-summary Federal Reserve /documents. Errors are returned as text prefixed
-with ERROR. Do not call
+commands or use browse for semantic candidate discovery instead. browse returns
+candidate documents ranked by relevance and does not guarantee literal text
+matches or final answer evidence. After choosing a likely browse candidate,
+verify the relevant claim with cat before answering. Use browse when the user
+asks for summary search, semantic search, or vector search and the command is
+listed as available. Quote multi-word semantic queries, for example:
+browse /documents "Federal Reserve". Do not write
+browse /documents Federal Reserve. Errors are returned as text prefixed with
+ERROR. Do not call
 commands that are not listed as available. When evidence is required, inspect it
 with cat or grep before answering. Prefer shell-like target-first cat syntax
 with stable targets: cat <path> --structure, cat <path> --page 31-59, and
@@ -85,7 +83,7 @@ continue with another chunk before answering.
 For questions about metadata fields, available summaries, or whether metadata
 was provided, inspect stat --schema and stat <target> before making claims.
 Do not use stat as a general content/topic discovery step. For document Q&A,
-prefer search-summary/find/grep for candidates, then cat --structure and
+prefer ls/tree to choose a folder, browse/find/grep for candidates, then cat --structure and
 cat --node or cat --page for evidence.
 """
 
@@ -97,11 +95,11 @@ Tool policy:
 - Folder paths such as /documents are positional command targets; never put folder paths in --where.
 - Use --where only with metadata fields shown by stat --schema.
 - grep -R performs lexical evidence search.
-- grep does not support regex alternation such as "a|b"; run separate grep commands or use search-summary for semantic candidate discovery.
-- Semantic search commands are candidate-discovery tools and do not guarantee literal text matches or final answer evidence. After selecting a likely search-summary candidate, verify the relevant facts with cat before answering.
-- Do not use find | grep as an exhaustive search or as proof that no document exists; find output can be scoped or limited. Use metadata filters, search-summary, grep on a narrowed target, or cat on likely candidates instead.
-- A single failed grep is not enough evidence to say there is no relevant document. If grep returns no matches for a workspace-topic question, verify with search-summary or another available semantic/vector candidate command, or inspect likely document structure, before answering no-evidence.
-- If search-summary is available and the user asks for summary search, semantic search, vector search, or "用 summary 搜", use search-summary "<query>" <folder>; quote multi-word queries, for example search-summary "Federal Reserve" /documents; do not translate that request into find --where.
+- grep does not support regex alternation such as "a|b"; run separate grep commands or use browse for semantic candidate discovery.
+- browse is the semantic candidate-discovery tool and does not guarantee literal text matches or final answer evidence. After selecting a likely browse candidate, verify the relevant facts with cat before answering.
+- Do not use find | grep as an exhaustive search or as proof that no document exists; find output can be scoped or limited. Use metadata filters, browse, grep on a narrowed target, or cat on likely candidates instead.
+- A single failed grep is not enough evidence to say there is no relevant document. If grep returns no matches for a workspace-topic question, verify with browse or inspect likely document structure, before answering no-evidence.
+- If the user asks for summary search, semantic search, vector search, or "用 summary 搜", use browse <folder> "<query>"; quote multi-word queries, for example browse /documents "Federal Reserve"; use browse -R <folder> when the folder choice is uncertain; do not translate that request into find --where.
 - Tool errors are returned as ERROR text; recover by trying an available command.
 - Use cat or grep to gather evidence before making source-backed claims.
 - Do not reconstruct a file path from a title. Use exact paths returned by PIFS commands, or use file_ref/document_id when available; quote paths that contain spaces.

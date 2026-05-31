@@ -76,7 +76,6 @@ PROJECTION_INDEX_STATUSES = {
 }
 
 SEMANTIC_RETRIEVAL_CHANNELS = ("summary", "entity", "relation")
-SEMANTIC_GREP_CHANNELS = ("entity", "relation")
 PAGEINDEX_DOCUMENT_SUFFIXES = {".pdf", ".md", ".markdown"}
 PAGEINDEX_DOCUMENT_CONTENT_TYPES = {
     "application/pdf",
@@ -249,8 +248,8 @@ class PageIndexFileSystem:
         """Attach semantic retrieval to already-built projection indexes.
 
         Register-time generation owns building the index files. Opening an
-        existing workspace should still expose the corresponding read commands,
-        such as search-summary, without forcing a re-register step.
+        existing workspace should still expose semantic browse, without forcing
+        a re-register step.
         """
         if self.semantic_retrieval_backend is not None:
             return bool(self.semantic_retrieval_channels())
@@ -696,12 +695,7 @@ class PageIndexFileSystem:
 
     def retrieval_capabilities(self) -> dict[str, Any]:
         semantic_channels = self.semantic_retrieval_channels()
-        semantic_commands = [f"search-{channel}" for channel in semantic_channels]
-        semantic_grep_channels = [
-            channel for channel in SEMANTIC_GREP_CHANNELS if channel in semantic_channels
-        ]
-        if semantic_grep_channels:
-            semantic_commands.append("semantic-grep")
+        semantic_commands = ["browse"] if semantic_channels else []
         return {
             "lexical": {
                 "grep_recursive": True,
@@ -713,7 +707,6 @@ class PageIndexFileSystem:
                 "backend_configured": self.semantic_retrieval_backend is not None,
                 "channels": list(semantic_channels),
                 "commands": semantic_commands,
-                "semantic_grep_channels": semantic_grep_channels,
             },
         }
 

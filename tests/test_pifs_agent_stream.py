@@ -215,10 +215,19 @@ class PIFSAgentStreamTest(unittest.TestCase):
         self.assertIn("Do not run stat merely to understand what a document says", AGENT_TOOL_POLICY)
         self.assertIn("Do not use stat as a general content/topic discovery step", BASH_TOOL_DESCRIPTION)
 
-    def test_prompt_routes_summary_search_to_search_summary(self):
-        self.assertIn("search-summary when the user asks for", BASH_TOOL_DESCRIPTION)
-        self.assertIn('use search-summary "<query>" <folder>', AGENT_TOOL_POLICY)
-        self.assertIn('search-summary "Federal Reserve" /documents', BASH_TOOL_DESCRIPTION)
+    def test_prompt_routes_semantic_search_to_browse(self):
+        for old_command in (
+            "search-summary",
+            "search-entity",
+            "search-relation",
+            "semantic-grep",
+        ):
+            self.assertNotIn(old_command, BASH_TOOL_DESCRIPTION)
+            self.assertNotIn(old_command, AGENT_TOOL_POLICY)
+        self.assertIn("Use browse when the user", BASH_TOOL_DESCRIPTION)
+        self.assertIn('use browse <folder> "<query>"', AGENT_TOOL_POLICY)
+        self.assertIn('browse /documents "Federal Reserve"', BASH_TOOL_DESCRIPTION)
+        self.assertIn("browse -R <folder>", AGENT_TOOL_POLICY)
         self.assertIn("do not translate that request into find --where", AGENT_TOOL_POLICY)
         self.assertIn("verify the relevant facts with cat", AGENT_TOOL_POLICY)
         self.assertIn("verify the relevant claim with cat", BASH_TOOL_DESCRIPTION)
