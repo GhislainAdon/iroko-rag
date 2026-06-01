@@ -75,7 +75,8 @@ class PIFSCommandExecutor:
             "- find <folder>: folder path is positional; do not put paths in --where",
             "- find --where: exact/canonical metadata DSL filtering using stat --schema fields only",
             "- find <folder> -maxdepth N -type f|d: bounded folder traversal for find",
-            "- grep -R: recursive lexical/FTS search only; semantic vector prefilter is disabled",
+            "- grep <query> <file>: single-file lexical evidence search without path prefixes",
+            "- grep -R <query> <folder>: recursive lexical/FTS search only; semantic vector prefilter is disabled",
             "- cat <path|file_ref|document_id> --structure: cached PageIndex structure JSON without text fields",
             "- cat <path|file_ref|document_id> --page: cached PageIndex page reads, limited to 5 pages",
             "- cat <path|file_ref|document_id> --all: text artifact reads for txt/text files, paginated at 100 lines",
@@ -444,6 +445,11 @@ class PIFSCommandExecutor:
                     require_match=True,
                 ),
             }
+        if recursive:
+            raise PIFSCommandError(
+                "grep -R is for folder targets; use grep <query> "
+                "<path|file_ref|document_id> for a single file"
+            )
         return {
             "mode": "matches",
             "query": query,
@@ -824,9 +830,10 @@ class PIFSCommandExecutor:
                 for item in data.get("data", [])
             )
         if mode == "matches":
+            if not data.get("data", []):
+                return f"# no matches for: {data.get('query', '')}"
             return "\n".join(
-                f"{self._file_target_path(item)}:{item['line']}: "
-                f"{self._compact_text(item['text'], max_chars=220)}"
+                f"{item['line']}: {self._compact_text(item['text'], max_chars=220)}"
                 for item in data.get("data", [])
             )
         return str(data)

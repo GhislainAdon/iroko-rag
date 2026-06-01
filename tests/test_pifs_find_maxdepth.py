@@ -97,6 +97,28 @@ def test_stable_path_targets_work_without_session_refs(tmp_path):
     assert "Root document fixture text" in text
 
 
+def test_single_file_grep_shell_output_omits_file_path(tmp_path):
+    executor = _register_find_fixture(tmp_path)
+    executor.json_output = False
+
+    output = executor.execute("grep Root '/documents/Root document'")
+
+    assert output == "1: Root document fixture text"
+    assert "/documents/Root document" not in output
+    assert "file_ref=" not in output
+    assert "id=doc_root" not in output
+
+
+def test_recursive_grep_rejects_single_file_target(tmp_path):
+    from pageindex.filesystem.commands import PIFSCommandError
+
+    executor = _register_find_fixture(tmp_path)
+    executor.json_output = False
+
+    with pytest.raises(PIFSCommandError, match="grep -R is for folder targets"):
+        executor.execute("grep -R Root '/documents/Root document'")
+
+
 def test_shell_limits_reject_context_expanding_counts(tmp_path):
     from pageindex.filesystem.commands import PIFSCommandError
 

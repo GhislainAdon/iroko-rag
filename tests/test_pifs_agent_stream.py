@@ -227,6 +227,9 @@ class PIFSAgentStreamTest(unittest.TestCase):
         self.assertIn("cat <path> --structure and cat <path> --page", BASH_TOOL_DESCRIPTION)
         self.assertIn("stop if the evidence is sufficient", AGENT_TOOL_POLICY)
         self.assertIn("continue with another chunk before answering", BASH_TOOL_DESCRIPTION)
+        self.assertIn("run cat <target> --structure before the first cat <target> --page", AGENT_TOOL_POLICY)
+        self.assertIn("Do not guess cat --page ranges from grep line numbers", AGENT_TOOL_POLICY)
+        self.assertIn("Do not use cat --page as the first inspection command", BASH_TOOL_DESCRIPTION)
         self.assertIn("Do not reconstruct paths from", BASH_TOOL_DESCRIPTION)
         self.assertIn("document titles", BASH_TOOL_DESCRIPTION)
         self.assertIn("file_ref/document_id", AGENT_TOOL_POLICY)
@@ -250,6 +253,8 @@ class PIFSAgentStreamTest(unittest.TestCase):
         self.assertIn("cat <target> --structure", AGENT_TOOL_POLICY)
         self.assertIn("cat <target> --page", AGENT_TOOL_POLICY)
         self.assertIn("Do not use browse as folder semantic recall", AGENT_TOOL_POLICY)
+        self.assertIn("Use grep <query> <path|file_ref|document_id> for a selected single file", AGENT_TOOL_POLICY)
+        self.assertIn("Use grep <query> <file> for one\nselected file", BASH_TOOL_DESCRIPTION)
 
     def test_default_agent_prompts_do_not_suggest_legacy_semantic_commands(self):
         prompt_surface = "\n".join(
@@ -274,6 +279,8 @@ class PIFSAgentStreamTest(unittest.TestCase):
         self.assertIn('browse -R /documents "Federal Reserve supervision regulation"', demo_prompt)
         self.assertIn("verify", demo_prompt)
         self.assertIn("cat <path> --structure", demo_prompt)
+        self.assertIn("Use grep <query> <file> for one selected file", demo_prompt)
+        self.assertIn("Do not guess cat --page ranges from grep line numbers", demo_prompt)
         self.assertNotIn("search-summary", demo_prompt)
 
     def test_prompt_rejects_find_grep_as_exhaustive_search(self):

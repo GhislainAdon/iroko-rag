@@ -86,11 +86,16 @@ Retrieval strategy:
   find /documents --where '{"file_format":"pdf"}'
 - Use grep -R only for lexical evidence; do not treat semantic candidates as
   literal matches.
+- Use grep <query> <file> for one selected file; use grep -R only with folder
+  targets.
 - Run one evidence command at a time. Do not chain large commands like
   cat <path> --structure, grep, and cat <path> --page in one bash call.
 - For PDFs, use cat <path> --structure to inspect the PageIndex tree, then
   cat <path> --page <range> for evidence, for example:
   cat /documents/2023-annual-report.pdf --page 31-35
+- Do not use cat --page as the first inspection command for a selected PDF.
+  Run cat <path> --structure for that same target first, then choose pages.
+- Do not guess cat --page ranges from grep line numbers.
 - For page-range questions, use cat <path> --structure to identify the full section
   range. Then run cat <path> --page on the smallest useful evidence range, usually the
   section start page or first 1-2 pages, before the final answer. Do not print
