@@ -82,6 +82,14 @@ class SQLiteFileSystemStore:
                 FOREIGN KEY(folder_id) REFERENCES folders(folder_id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS semantic_folder_manifests (
+                build_id TEXT PRIMARY KEY,
+                source_scope TEXT NOT NULL,
+                mount_path TEXT NOT NULL,
+                manifest_json TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS metadata_schema (
                 schema_id TEXT PRIMARY KEY,
                 scope_path TEXT,
@@ -127,6 +135,8 @@ class SQLiteFileSystemStore:
             CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
             CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);
             CREATE INDEX IF NOT EXISTS idx_file_folders_folder ON file_folders(folder_id);
+            CREATE INDEX IF NOT EXISTS idx_semantic_folder_manifests_scope
+                ON semantic_folder_manifests(source_scope, created_at);
             CREATE INDEX IF NOT EXISTS idx_metadata_fields_name ON metadata_fields(name);
             CREATE INDEX IF NOT EXISTS idx_metadata_values_field_text ON metadata_values(field_id, value_text);
             CREATE INDEX IF NOT EXISTS idx_metadata_values_field_number ON metadata_values(field_id, value_number);
@@ -391,6 +401,326 @@ class SQLiteFileSystemStore:
                         json.dumps(item.get("metadata") or {}, ensure_ascii=False),
                     ),
                 )
+
+    def semantic_generated_mount_containing(self, path: str) -> str | None:
+        path = normalize_path(path)
+        with self.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT path
+                FROM folders
+                WHERE kind = 'generated'
+                  AND json_extract(metadata_json, '$.generator') = 'pifs_semantic_folder'
+                  AND json_extract(metadata_json, '$.mount_role') = 'semantic_mount'
+                  AND (path = ? OR ? LIKE {self._descendant_like_sql_expr("path")} ESCAPE '\\')
+                ORDER BY LENGTH(path) DESC, path DESC
+                LIMIT 1
+                """,
+                (path, path),
+            ).fetchone()
+        return None if row is None else str(row["path"])
+
+    def semantic_source_file_entries(self, source_scope: str) -> list[FileEntry]:
+        source_scope = normalize_path(source_scope)
+        with self.connect() as conn:
+            folder = self._folder_by_path(conn, source_scope)
+            if folder is None:
+                raise KeyError(f"Unknown folder path: {source_scope}")
+            rows = conn.execute(
+                f"""
+                SELECT
+                    f.file_ref,
+                    f.external_id,
+                    f.storage_uri,
+                    f.title,
+                    f.descriptor,
+                    f.content_type,
+                    f.source_type,
+                    f.fingerprint,
+                    f.text_artifact_path,
+                    f.raw_artifact_path,
+                    f.pageindex_doc_id,
+                    f.pageindex_tree_status,
+                    f.metadata_json,
+                    f.metadata_status_json,
+                    MIN(scope_folder.path) AS folder_path
+                FROM files f
+                JOIN file_folders scope_ff ON scope_ff.file_ref = f.file_ref
+                JOIN folders scope_folder ON scope_folder.folder_id = scope_ff.folder_id
+                WHERE f.deleted_at IS NULL
+                  AND (
+                    scope_folder.path = ?
+                    OR scope_folder.path LIKE ? ESCAPE '\\'
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM folders excluded
+                    WHERE excluded.kind = 'generated'
+                      AND json_extract(excluded.metadata_json, '$.generator') = 'pifs_semantic_folder'
+                      AND json_extract(excluded.metadata_json, '$.mount_role') = 'semantic_mount'
+                      AND (
+                        scope_folder.path = excluded.path
+                        OR scope_folder.path LIKE {self._descendant_like_sql_expr("excluded.path")} ESCAPE '\\'
+                      )
+                  )
+                GROUP BY f.file_ref
+                ORDER BY f.file_ref
+                """,
+                (source_scope, self._descendant_like(source_scope)),
+            ).fetchall()
+        return [self._file_entry(row) for row in rows]
+
+    def apply_semantic_folder_build(
+        self,
+        *,
+        source_scope: str,
+        mount_path: str,
+        memberships: list[dict[str, Any]],
+        manifest: dict[str, Any],
+    ) -> None:
+        source_scope = normalize_path(source_scope)
+        mount_path = normalize_path(mount_path)
+        build_id = str(manifest["build_id"])
+        with self.connect() as conn:
+            source = self._folder_by_path(conn, source_scope)
+            if source is None:
+                raise KeyError(f"Unknown folder path: {source_scope}")
+            self._validate_semantic_mount_conflict(
+                conn,
+                source_scope=source_scope,
+                mount_path=mount_path,
+            )
+            self._delete_semantic_mount_tree(
+                conn,
+                source_scope=source_scope,
+                mount_path=mount_path,
+            )
+            mount_metadata = {
+                "generator": "pifs_semantic_folder",
+                "mount_role": "semantic_mount",
+                "source_scope": source_scope,
+                "mount_path": mount_path,
+                "build_id": build_id,
+            }
+            self._ensure_generated_folder_path(
+                conn,
+                mount_path,
+                stop_parent=source_scope,
+                metadata=mount_metadata,
+            )
+            leaf_groups: dict[str, list[dict[str, Any]]] = {}
+            for membership in memberships:
+                leaf_path = normalize_path(f"{mount_path}/{membership['relative_path']}")
+                leaf_groups.setdefault(leaf_path, []).append(membership)
+            display_names: dict[tuple[str, str], str] = {}
+            for leaf_path, items in leaf_groups.items():
+                titles: dict[str, list[str]] = {}
+                for item in items:
+                    title = self._file_title(conn, str(item["file_ref"]))
+                    titles.setdefault(title, []).append(str(item["file_ref"]))
+                for item in items:
+                    title = self._file_title(conn, str(item["file_ref"]))
+                    display = title
+                    if len(titles[title]) > 1:
+                        display = self._semantic_display_name(title, str(item["file_ref"]))
+                    display_names[(str(item["file_ref"]), leaf_path)] = display
+
+            for leaf_path, items in leaf_groups.items():
+                folder_metadata = {
+                    "generator": "pifs_semantic_folder",
+                    "mount_role": "semantic_branch",
+                    "source_scope": source_scope,
+                    "mount_path": mount_path,
+                    "build_id": build_id,
+                }
+                self._ensure_generated_folder_path(
+                    conn,
+                    leaf_path,
+                    stop_parent=mount_path,
+                    metadata=folder_metadata,
+                )
+                folder_id = self._resolve_or_create_folder(conn, leaf_path)
+                used_display_names: set[str] = set()
+                for item in items:
+                    file_ref = self._resolve_file_ref(conn, str(item["file_ref"]))
+                    display_name = display_names[(file_ref, leaf_path)]
+                    if display_name in used_display_names:
+                        raise FileExistsError(f"Semantic Folder display name collision at {leaf_path}")
+                    used_display_names.add(display_name)
+                    membership_metadata = {
+                        "generator": "pifs_semantic_folder",
+                        "source_scope": source_scope,
+                        "mount_path": mount_path,
+                        "build_id": build_id,
+                        "relative_path": item["relative_path"],
+                        "display_name": display_name,
+                        "canonical_segments": item.get("canonical_segments") or [],
+                    }
+                    if item.get("confidence") is not None:
+                        membership_metadata["confidence"] = item["confidence"]
+                    conn.execute(
+                        """
+                        INSERT INTO file_folders(file_ref, folder_id, metadata_json)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(file_ref, folder_id) DO UPDATE SET
+                            metadata_json = excluded.metadata_json
+                        """,
+                        (
+                            file_ref,
+                            folder_id,
+                            json.dumps(membership_metadata, ensure_ascii=False),
+                        ),
+                    )
+            conn.execute(
+                """
+                INSERT INTO semantic_folder_manifests(
+                    build_id, source_scope, mount_path, manifest_json
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    build_id,
+                    source_scope,
+                    mount_path,
+                    json.dumps(manifest, ensure_ascii=False),
+                ),
+            )
+
+    def validate_semantic_mount_available(self, *, source_scope: str, mount_path: str) -> None:
+        with self.connect() as conn:
+            self._validate_semantic_mount_conflict(
+                conn,
+                source_scope=normalize_path(source_scope),
+                mount_path=normalize_path(mount_path),
+            )
+
+    def membership_display_name(self, file_ref: str, folder_path: str) -> str | None:
+        folder_path = normalize_path(folder_path)
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT ff.metadata_json, f.title
+                FROM file_folders ff
+                JOIN folders fo ON fo.folder_id = ff.folder_id
+                JOIN files f ON f.file_ref = ff.file_ref
+                WHERE ff.file_ref = ?
+                  AND fo.path = ?
+                  AND f.deleted_at IS NULL
+                LIMIT 1
+                """,
+                (file_ref, folder_path),
+            ).fetchone()
+        if row is None:
+            return None
+        metadata = self._json_object(row["metadata_json"])
+        return str(metadata.get("display_name") or row["title"] or "").strip() or None
+
+    def _validate_semantic_mount_conflict(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        source_scope: str,
+        mount_path: str,
+    ) -> None:
+        row = self._folder_by_path(conn, mount_path)
+        if row is None:
+            return
+        metadata = self._json_object(row["metadata_json"])
+        if (
+            row["kind"] == "generated"
+            and metadata.get("generator") == "pifs_semantic_folder"
+            and metadata.get("mount_role") == "semantic_mount"
+            and metadata.get("source_scope") == source_scope
+            and metadata.get("mount_path") == mount_path
+        ):
+            return
+        raise FileExistsError(
+            f"Semantic mount path already exists as a non-generated folder: {mount_path}"
+        )
+
+    def _delete_semantic_mount_tree(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        source_scope: str,
+        mount_path: str,
+    ) -> None:
+        rows = conn.execute(
+            """
+            SELECT path, kind, metadata_json
+            FROM folders
+            WHERE path = ? OR path LIKE ? ESCAPE '\\'
+            ORDER BY LENGTH(path) DESC
+            """,
+            (mount_path, self._descendant_like(mount_path)),
+        ).fetchall()
+        for row in rows:
+            metadata = self._json_object(row["metadata_json"])
+            if not (
+                row["kind"] == "generated"
+                and metadata.get("generator") == "pifs_semantic_folder"
+                and metadata.get("source_scope") == source_scope
+                and metadata.get("mount_path") == mount_path
+            ):
+                raise FileExistsError(
+                    f"Semantic mount path contains non-generated content: {row['path']}"
+                )
+        for row in rows:
+            conn.execute("DELETE FROM folders WHERE path = ?", (row["path"],))
+
+    def _ensure_generated_folder_path(
+        self,
+        conn: sqlite3.Connection,
+        path: str,
+        *,
+        stop_parent: str,
+        metadata: dict[str, Any],
+    ) -> str:
+        path = normalize_path(path)
+        stop_parent = normalize_path(stop_parent)
+        if path == stop_parent:
+            row = self._folder_by_path(conn, path)
+            if row is None:
+                raise KeyError(f"Unknown semantic folder parent: {stop_parent}")
+            return row["folder_id"]
+        parent_path = normalize_path(str(Path(path).parent))
+        if parent_path != stop_parent:
+            parent_id = self._ensure_generated_folder_path(
+                conn,
+                parent_path,
+                stop_parent=stop_parent,
+                metadata={
+                    "generator": "pifs_semantic_folder",
+                    "mount_role": "semantic_branch",
+                    "source_scope": metadata["source_scope"],
+                    "mount_path": metadata["mount_path"],
+                    "build_id": metadata["build_id"],
+                },
+            )
+        else:
+            parent = self._folder_by_path(conn, parent_path)
+            if parent is None:
+                raise KeyError(f"Unknown semantic folder parent: {parent_path}")
+            parent_id = parent["folder_id"]
+        folder_id = self.folder_id(path)
+        self._upsert_folder_row(
+            conn,
+            folder_id=folder_id,
+            parent_id=parent_id,
+            name=path.rsplit("/", 1)[-1],
+            path=path,
+            kind="generated",
+            description="PIFS Semantic Folder",
+            metadata_json=json.dumps(metadata, ensure_ascii=False),
+        )
+        return folder_id
+
+    @staticmethod
+    def _semantic_display_name(title: str, file_ref: str) -> str:
+        suffix = file_ref.replace("file_", "")[:8]
+        path = Path(title)
+        if path.suffix:
+            return f"{path.stem} [{suffix}]{path.suffix}"
+        return f"{title} [{suffix}]"
 
     def _ensure_title_available_in_folder(
         self,
@@ -1208,9 +1538,19 @@ class SQLiteFileSystemStore:
                     f.file_ref,
                     f.external_id,
                     f.title,
+                    COALESCE(
+                        NULLIF(json_extract(ff.metadata_json, '$.display_name'), ''),
+                        f.title
+                    ) AS display_title,
                     pf.path AS folder_path,
                     (CASE WHEN pf.path = '/' THEN '/' ELSE pf.path || '/' END)
-                        || ltrim(f.title, '/') AS title_virtual_path
+                        || ltrim(
+                            COALESCE(
+                                NULLIF(json_extract(ff.metadata_json, '$.display_name'), ''),
+                                f.title
+                            ),
+                            '/'
+                        ) AS title_virtual_path
                 FROM files f
                 JOIN file_folders ff ON ff.file_ref = f.file_ref
                 JOIN folders pf ON pf.folder_id = ff.folder_id
@@ -1219,11 +1559,11 @@ class SQLiteFileSystemStore:
             SELECT
                 file_ref,
                 external_id,
-                title,
+                display_title AS title,
                 MIN(folder_path) AS folder_path
             FROM virtual_matches
             WHERE title_virtual_path = ?
-            GROUP BY file_ref, external_id, title
+            GROUP BY file_ref, external_id, display_title
             ORDER BY file_ref
             LIMIT 2
             """,
@@ -1629,7 +1969,13 @@ class SQLiteFileSystemStore:
                 f.metadata_status_json,
                 f.created_at,
                 MIN(pf.folder_id) AS folder_id,
-                MIN(pf.path) AS folder_path
+                MIN(pf.path) AS folder_path,
+                MIN(
+                    COALESCE(
+                        NULLIF(json_extract(ff.metadata_json, '$.display_name'), ''),
+                        f.title
+                    )
+                ) AS display_title
             FROM files f
             JOIN file_folders ff ON ff.file_ref = f.file_ref
             JOIN folders pf ON pf.folder_id = ff.folder_id
@@ -1823,13 +2169,15 @@ class SQLiteFileSystemStore:
     @classmethod
     def _file_summary(cls, row: sqlite3.Row) -> dict[str, Any]:
         external_id = row["external_id"]
+        display_title = cls._row_value(row, "display_title", row["title"])
         return {
             "file_ref": row["file_ref"],
             "id": external_id or row["file_ref"],
             "document_id": external_id,
             "external_id": external_id,
-            "name": row["title"],
-            "title": row["title"],
+            "name": display_title,
+            "title": display_title,
+            "original_title": row["title"],
             "description": cls._row_value(row, "descriptor", row["title"]),
             "status": cls._row_value(row, "pageindex_tree_status", "not_built"),
             "pageNum": None,

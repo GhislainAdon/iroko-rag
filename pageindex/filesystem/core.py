@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import tempfile
+import uuid
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Optional, Union
 from urllib.parse import unquote, urlparse
@@ -22,6 +23,14 @@ from .store import (
     make_file_ref,
     metadata_text,
     normalize_path,
+)
+from .semantic_folder import (
+    CANDIDATE_FIELDS as SEMANTIC_FOLDER_CANDIDATE_FIELDS,
+    OpenAISemanticFolderPlanner,
+    SemanticFolderBuildItem,
+    SemanticFolderPlanner,
+    semantic_mount_path,
+    validate_semantic_folder_plan,
 )
 from .types import OpenResult, SearchResult
 
@@ -321,6 +330,198 @@ class PageIndexFileSystem:
             "file_refs": file_refs,
         }
 
+    def build_semantic_folder(
+        self,
+        source_scope: str = "/",
+        *,
+        planner: SemanticFolderPlanner | None = None,
+    ) -> dict[str, Any]:
+        source_scope = normalize_path(source_scope or "/")
+        blocked_mount = self.store.semantic_generated_mount_containing(source_scope)
+        if blocked_mount is not None:
+            raise ValueError(
+                "Semantic Folder source scope must not be a semantic mount path "
+                f"or descendant: {source_scope}"
+            )
+        self.store.folder_info(source_scope)
+        mount_path = semantic_mount_path(source_scope)
+        self.store.validate_semantic_mount_available(
+            source_scope=source_scope,
+            mount_path=mount_path,
+        )
+        entries = self.store.semantic_source_file_entries(source_scope)
+        if not entries:
+            raise ValueError(f"No files found in Semantic Folder source scope: {source_scope}")
+
+        records = [self._record_from_file_entry(entry) for entry in entries]
+        metadata_stats = self._ensure_semantic_folder_candidate_metadata(records)
+        item_file_refs: dict[str, str] = {}
+        items: list[SemanticFolderBuildItem] = []
+        for index, record in enumerate(records, 1):
+            item_id = f"item_{index:04d}"
+            item_file_refs[item_id] = record["file_ref"]
+            metadata = record.get("metadata") or {}
+            items.append(
+                SemanticFolderBuildItem(
+                    item_id=item_id,
+                    title=str(record.get("title") or ""),
+                    summary=str(metadata.get("summary") or ""),
+                    domain=metadata.get("domain"),
+                    topic=metadata.get("topic"),
+                )
+            )
+        planning_payload = {
+            "feature": "PIFS Semantic Folder",
+            "candidate_fields": list(SEMANTIC_FOLDER_CANDIDATE_FIELDS),
+            "membership_limit": 3,
+            "path_contract": "relative field/value segments under semantic mount path",
+            "items": [
+                {
+                    "item_id": item.item_id,
+                    "title": item.title,
+                    "summary": item.summary,
+                    "domain": item.domain,
+                    "topic": item.topic,
+                }
+                for item in items
+            ],
+        }
+        planner = planner or OpenAISemanticFolderPlanner()
+        raw_plan = planner.plan(planning_payload)
+        validated = validate_semantic_folder_plan(
+            raw_plan,
+            item_file_refs=item_file_refs,
+        )
+        memberships = [
+            {
+                "file_ref": membership.file_ref,
+                "item_id": membership.item_id,
+                "relative_path": membership.relative_path,
+                "confidence": membership.confidence,
+                "canonical_segments": membership.canonical_segments,
+            }
+            for membership in validated.memberships
+        ]
+        build_id = f"semantic_folder_{uuid.uuid4().hex}"
+        skipped = list(validated.skipped)
+        planned_item_ids = {membership.item_id for membership in validated.memberships}
+        explicitly_skipped = {item["item_id"] for item in skipped}
+        for item in items:
+            if item.item_id not in planned_item_ids and item.item_id not in explicitly_skipped:
+                skipped.append({"item_id": item.item_id, "reason": "not included in plan"})
+        manifest = {
+            "build_id": build_id,
+            "source_scope": source_scope,
+            "mount_path": mount_path,
+            "template": validated.template,
+            "candidate_fields": list(SEMANTIC_FOLDER_CANDIDATE_FIELDS),
+            "canonical_values": validated.canonical_values,
+            "memberships": memberships,
+            "skipped": skipped,
+            "items": [
+                {
+                    "item_id": item.item_id,
+                    "file_ref": item_file_refs[item.item_id],
+                    "title": item.title,
+                    "domain": item.domain,
+                    "topic": item.topic,
+                }
+                for item in items
+            ],
+            "planner": {
+                "type": planner.__class__.__name__,
+            },
+        }
+        self.store.apply_semantic_folder_build(
+            source_scope=source_scope,
+            mount_path=mount_path,
+            memberships=memberships,
+            manifest=manifest,
+        )
+        return {
+            "source": source_scope,
+            "mount": mount_path,
+            "template": "/".join(validated.template),
+            "files": len(items),
+            "memberships": len(memberships),
+            "skipped": len(skipped),
+            "metadata_cached": metadata_stats["cached"],
+            "metadata_generating": metadata_stats["generating"],
+            "metadata_failed": metadata_stats["failed"],
+            "planning": "generated",
+        }
+
+    def _ensure_semantic_folder_candidate_metadata(
+        self,
+        records: list[dict[str, Any]],
+    ) -> dict[str, int]:
+        self.metadata.register_schema(
+            {
+                "fields": {
+                    field: {"type": DEFAULT_METADATA_FIELD_TYPES[field]}
+                    for field in SEMANTIC_FOLDER_CANDIDATE_FIELDS
+                }
+            },
+            source="pifs",
+        )
+        cached = 0
+        generating = 0
+        failed = 0
+        for record in records:
+            fields = [
+                field
+                for field in SEMANTIC_FOLDER_CANDIDATE_FIELDS
+                if not self._semantic_candidate_field_ready(record, field)
+            ]
+            cached += len(SEMANTIC_FOLDER_CANDIDATE_FIELDS) - len(fields)
+            if not fields:
+                continue
+            generating += len(fields)
+            status = record["metadata_status"]
+            policy_fields = status.setdefault("policy", {}).setdefault("fields", {})
+            status_fields = status.setdefault("fields", {})
+            for field in fields:
+                policy_fields[field] = True
+                status_fields[field] = {
+                    "requested": True,
+                    "status": "pending_generate",
+                    "owner": "pifs",
+                    "source": "llm",
+                }
+            if self.metadata_generator is None:
+                self.metadata_generator = MetadataGenerator(
+                    provider=self.metadata_provider,
+                    model=self.metadata_model,
+                    base_url=self.metadata_base_url,
+                    max_text_chars=self.metadata_max_text_chars,
+                )
+            self._generate_register_metadata(record, force=True)
+            self.store.update_file_metadata_status(
+                record["file_ref"],
+                metadata=record["metadata"],
+                metadata_status=record["metadata_status"],
+            )
+            for field in fields:
+                if self._semantic_candidate_field_ready(record, field):
+                    continue
+                failed += 1
+        return {"cached": cached, "generating": generating, "failed": failed}
+
+    @staticmethod
+    def _semantic_candidate_field_ready(record: dict[str, Any], field: str) -> bool:
+        value = (record.get("metadata") or {}).get(field)
+        if value is None or value == "" or value == []:
+            return False
+        field_status = (
+            (record.get("metadata_status") or {})
+            .get("fields", {})
+            .get(field, {})
+        )
+        status = field_status.get("status")
+        if status is None:
+            return True
+        return status == "generated"
+
     def _ensure_register_completion_defaults(self) -> None:
         if self.metadata_generator is None:
             self.metadata_generator = MetadataGenerator(
@@ -606,6 +807,7 @@ class PageIndexFileSystem:
                 path,
                 entry.folder_path,
             )
+            display_title = self.store.membership_display_name(file_ref, folder_path) or entry.title
             rank = len(rows) + 1
             rows.append(
                 {
@@ -620,7 +822,8 @@ class PageIndexFileSystem:
                     "file_ref": file_ref,
                     "document_id": entry.external_id,
                     "external_id": entry.external_id,
-                    "title": entry.title,
+                    "title": display_title,
+                    "original_title": entry.title,
                     "folder_path": folder_path,
                     "folder_paths": folder_paths,
                     "summary": str((entry.metadata or {}).get("summary") or ""),
@@ -715,11 +918,12 @@ class PageIndexFileSystem:
                 for folder in self.store.folder_memberships(row["file_ref"])
             ]
             folder_path = self._preferred_folder_path(folder_paths, scope_path, row["folder_path"])
+            display_title = self.store.membership_display_name(row["file_ref"], folder_path) or row["title"]
             results.append(
                 SearchResult(
                     file_ref=row["file_ref"],
                     external_id=row["external_id"],
-                    title=row["title"],
+                    title=display_title,
                     snippet=row["snippet"],
                     folder_path=folder_path,
                     folder_paths=folder_paths,
@@ -727,7 +931,7 @@ class PageIndexFileSystem:
                     metadata_status=row["metadata_status"],
                     id=row["id"],
                     document_id=row["document_id"],
-                    name=row["name"],
+                    name=display_title,
                     description=row["description"],
                     status=row["status"],
                     pageNum=row["pageNum"],
@@ -1758,7 +1962,11 @@ class PageIndexFileSystem:
         folder_path: str | None = None,
     ) -> str:
         folder_path = normalize_path(folder_path or getattr(entry, "folder_path", None) or "/")
-        title = str(getattr(entry, "title", "") or "").strip()
+        title = str(
+            self.store.membership_display_name(file_ref, folder_path)
+            or getattr(entry, "title", "")
+            or ""
+        ).strip()
         if not title:
             raise RuntimeError(f"browse cannot build a virtual path for {file_ref}: missing title")
         target = self._join_virtual_file_path(folder_path, title.strip("/"))
