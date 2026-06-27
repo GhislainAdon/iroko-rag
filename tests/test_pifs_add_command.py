@@ -4,21 +4,6 @@ from pathlib import Path
 import pytest
 
 
-class GeneratedMetadata:
-    def __init__(self):
-        self.calls = []
-
-    def generate(self, request, *, fields):
-        self.calls.append((request, list(fields)))
-        values = {
-            "summary": f"Summary for {request.title}: {request.text[:60]}",
-            "doc_type": "uploaded_file",
-            "domain": "workspace",
-            "topic": "pifs add",
-        }
-        return {field: values[field] for field in fields if field in values}
-
-
 class StaticEmbedder:
     def embed(self, texts):
         return [[1.0, 0.0, 0.0] for _ in texts]
@@ -39,14 +24,47 @@ def make_summary_indexer(workspace: Path):
 def make_filesystem(workspace: Path):
     from pageindex.filesystem import PageIndexFileSystem
 
-    return PageIndexFileSystem(
+    filesystem = PageIndexFileSystem(
         workspace=workspace,
-        metadata_generator=GeneratedMetadata(),
-        summary_projection_indexer=make_summary_indexer(workspace),
         summary_projection_embedding_provider="test",
         summary_projection_embedding_model="static",
         summary_projection_embedding_dimensions=3,
     )
+    filesystem.summary_projection_indexer = make_summary_indexer(workspace)
+    return filesystem
+
+
+@pytest.fixture(autouse=True)
+def fake_pageindex_index(monkeypatch):
+    from pageindex import PageIndexClient
+
+    def fake_index(self, file_path, mode="auto"):
+        path = Path(file_path)
+        doc_id = f"doc_{path.stem}"
+        text = path.read_text(encoding="utf-8")
+        doc = {
+            "id": doc_id,
+            "type": "md",
+            "path": str(path.resolve()),
+            "doc_name": path.name,
+            "doc_description": f"Summary for {path.name}: {text[:60]}",
+            "line_count": len(text.splitlines()),
+            "structure": [
+                {
+                    "title": path.stem,
+                    "node_id": "0001",
+                    "line_num": 1,
+                    "text": text,
+                    "nodes": [],
+                }
+            ],
+            "pages": [{"page": 1, "content": text}],
+        }
+        write_pageindex_client_doc(self.workspace, doc_id, doc)
+        self.documents[doc_id] = doc
+        return doc_id
+
+    monkeypatch.setattr(PageIndexClient, "index", fake_index)
 
 
 def write_pageindex_client_doc(workspace: Path, doc_id: str, doc: dict) -> None:
@@ -73,14 +91,14 @@ def write_pageindex_client_doc(workspace: Path, doc_id: str, doc: dict) -> None:
 def test_add_text_folder_target_copies_artifact_indexes_summary_and_is_readable(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor
 
-    source = tmp_path / "filing.txt"
+    source = tmp_path / "filing.md"
     source.write_text("alpha filing text for pifs add", encoding="utf-8")
     workspace = tmp_path / "workspace"
     filesystem = make_filesystem(workspace)
 
     info = filesystem.add_file(str(source), "/documents/reports")
 
-    assert info["path"] == "/documents/reports/filing.txt"
+    assert info["path"] == "/documents/reports/filing.md"
     assert info["folder_path"] == "/documents/reports"
     assert filesystem.folder_info("/documents/reports")["path"] == "/documents/reports"
     entry = filesystem.store.get_file(info["file_ref"])
@@ -91,19 +109,19 @@ def test_add_text_folder_target_copies_artifact_indexes_summary_and_is_readable(
     assert copied_path.resolve() != source.resolve()
 
     executor = PIFSCommandExecutor(filesystem)
-    rendered = json.loads(executor.execute("grep alpha /documents/reports/filing.txt"))
+    rendered = json.loads(executor.execute("grep alpha /documents/reports/filing.md"))
 
     assert rendered["data"]["matches"] == [
         {"line": 1, "text": "alpha filing text for pifs add"}
     ]
-    assert info["metadata"]["summary"].startswith("Summary for filing.txt")
+    assert info["metadata"]["summary"].startswith("Summary for filing.md")
     assert filesystem.summary_projection_indexer.index.info()["document_count"] == 1
 
 
 def test_add_rejects_same_folder_same_basename_without_overwrite(tmp_path):
     from pageindex.filesystem import PIFSCommandExecutor
 
-    source = tmp_path / "conflict.txt"
+    source = tmp_path / "conflict.md"
     source.write_text("first body", encoding="utf-8")
     filesystem = make_filesystem(tmp_path / "workspace")
 
@@ -114,7 +132,7 @@ def test_add_rejects_same_folder_same_basename_without_overwrite(tmp_path):
         filesystem.add_file(source, "/documents")
 
     executor = PIFSCommandExecutor(filesystem)
-    rendered = json.loads(executor.execute("grep first /documents/conflict.txt"))
+    rendered = json.loads(executor.execute("grep first /documents/conflict.md"))
     assert rendered["data"]["matches"] == [{"line": 1, "text": "first body"}]
 
 
@@ -130,29 +148,8 @@ def test_add_rejects_unsupported_type_before_registration(tmp_path):
     assert not list((tmp_path / "workspace" / "artifacts" / "uploads").glob("**/*"))
 
 
-def test_add_rejects_disabled_summary_projection_before_registration(tmp_path):
-    from pageindex.filesystem import PageIndexFileSystem
-
-    source = tmp_path / "disabled.txt"
-    source.write_text("must not register without summary vector", encoding="utf-8")
-    workspace = tmp_path / "workspace"
-    filesystem = PageIndexFileSystem(
-        workspace=workspace,
-        metadata_generator=GeneratedMetadata(),
-        summary_projection_index=False,
-    )
-
-    with pytest.raises(RuntimeError, match="summary projection index"):
-        filesystem.add_file(source, "/documents")
-
-    assert filesystem.browse("/", recursive=True)["files"] == []
-    assert not list((workspace / "artifacts" / "uploads").glob("**/*"))
-    assert not list((workspace / "artifacts" / "text").glob("*.txt"))
-    assert not list((workspace / "artifacts" / "raw").glob("*.json"))
-
-
 def test_add_configures_semantic_retrieval_in_same_filesystem_instance(tmp_path):
-    source = tmp_path / "semantic.txt"
+    source = tmp_path / "semantic.md"
     source.write_text("alpha semantic recall text", encoding="utf-8")
     filesystem = make_filesystem(tmp_path / "workspace")
 
@@ -167,7 +164,7 @@ def test_add_configures_semantic_retrieval_in_same_filesystem_instance(tmp_path)
         recursive=True,
         page_size=5,
     )
-    assert [item["path"] for item in results["data"]] == ["/documents/semantic.txt"]
+    assert [item["path"] for item in results["data"]] == ["/documents/semantic.md"]
 
 
 def test_add_markdown_builds_pageindex_tree_from_copied_artifact(tmp_path, monkeypatch):
@@ -184,7 +181,7 @@ def test_add_markdown_builds_pageindex_tree_from_copied_artifact(tmp_path, monke
             "type": "md",
             "path": str(Path(file_path).resolve()),
             "doc_name": "notes.md",
-            "doc_description": "",
+            "doc_description": "summary",
             "line_count": 3,
             "structure": [
                 {
@@ -217,7 +214,7 @@ def test_add_markdown_builds_pageindex_tree_from_copied_artifact(tmp_path, monke
 
 
 def test_add_failure_does_not_leave_visible_catalog_or_artifacts(tmp_path, monkeypatch):
-    source = tmp_path / "atomic.txt"
+    source = tmp_path / "atomic.md"
     source.write_text("atomic body", encoding="utf-8")
     workspace = tmp_path / "workspace"
     filesystem = make_filesystem(workspace)
@@ -247,7 +244,7 @@ def test_add_markdown_insert_failure_removes_pageindex_cache(tmp_path, monkeypat
             "type": "md",
             "path": str(Path(file_path).resolve()),
             "doc_name": "failed.md",
-            "doc_description": "",
+            "doc_description": "summary",
             "line_count": 3,
             "structure": [
                 {
@@ -302,7 +299,7 @@ def test_add_markdown_index_failure_removes_pageindex_cache_delta(tmp_path, monk
             "type": "md",
             "path": str(Path(file_path).resolve()),
             "doc_name": "partial.md",
-            "doc_description": "",
+            "doc_description": "summary",
             "line_count": 3,
             "structure": [{"title": "Partial", "node_id": "0001", "nodes": []}],
         }
@@ -317,7 +314,7 @@ def test_add_markdown_index_failure_removes_pageindex_cache_delta(tmp_path, monk
     filesystem = make_filesystem(workspace)
     pageindex_workspace = workspace / "artifacts" / "pageindex_client"
 
-    with pytest.raises(RuntimeError, match="failed to build PageIndex tree"):
+    with pytest.raises(RuntimeError, match="requires PageIndex extraction"):
         filesystem.add_file(source, "/documents/reports")
 
     assert not (pageindex_workspace / "doc_partial_before_raise.json").exists()
@@ -344,7 +341,7 @@ def test_add_markdown_failure_preserves_unrelated_pageindex_cache(tmp_path, monk
             "type": "md",
             "path": str(Path(file_path).resolve()),
             "doc_name": "failed.md",
-            "doc_description": "",
+            "doc_description": "summary",
             "line_count": 3,
             "structure": [{"title": "Failed", "node_id": "0001", "nodes": []}],
         }
@@ -366,7 +363,7 @@ def test_add_markdown_failure_preserves_unrelated_pageindex_cache(tmp_path, monk
             "type": "md",
             "path": str((tmp_path / "unrelated.md").resolve()),
             "doc_name": "unrelated.md",
-            "doc_description": "",
+            "doc_description": "summary",
             "line_count": 1,
             "structure": [{"title": "Unrelated", "node_id": "0001", "nodes": []}],
         },
@@ -390,7 +387,7 @@ def test_add_markdown_failure_preserves_unrelated_pageindex_cache(tmp_path, monk
 def test_add_failure_after_summary_vector_rolls_back_catalog_and_vector(
     tmp_path, monkeypatch
 ):
-    source = tmp_path / "post_vector.txt"
+    source = tmp_path / "post_vector.md"
     source.write_text("post vector rollback body", encoding="utf-8")
     workspace = tmp_path / "workspace"
     filesystem = make_filesystem(workspace)
@@ -411,7 +408,7 @@ def test_add_failure_after_summary_vector_rolls_back_catalog_and_vector(
 
 
 def test_add_failure_removes_nested_folders_created_only_for_add(tmp_path, monkeypatch):
-    source = tmp_path / "nested.txt"
+    source = tmp_path / "nested.md"
     source.write_text("nested rollback body", encoding="utf-8")
     workspace = tmp_path / "workspace"
     filesystem = make_filesystem(workspace)
@@ -434,7 +431,7 @@ def test_add_failure_removes_nested_folders_created_only_for_add(tmp_path, monke
 
 
 def test_add_failure_preserves_preexisting_parent_folder(tmp_path, monkeypatch):
-    source = tmp_path / "nested.txt"
+    source = tmp_path / "nested.md"
     source.write_text("nested rollback body", encoding="utf-8")
     workspace = tmp_path / "workspace"
     filesystem = make_filesystem(workspace)
@@ -457,7 +454,7 @@ def test_add_failure_preserves_preexisting_parent_folder(tmp_path, monkeypatch):
 def test_cli_add_uses_workspace_and_prints_added_file(monkeypatch, capsys, tmp_path):
     from pageindex.filesystem import cli
 
-    source = tmp_path / "cli.txt"
+    source = tmp_path / "cli.md"
     source.write_text("cli body", encoding="utf-8")
     calls = []
 
@@ -472,7 +469,7 @@ def test_cli_add_uses_workspace_and_prints_added_file(monkeypatch, capsys, tmp_p
             calls.append((self.workspace, physical_path, virtual_target))
             return {
                 "file_ref": "file_cli",
-                "path": "/documents/cli.txt",
+                "path": "/documents/cli.md",
             }
 
     monkeypatch.setattr(cli, "PageIndexFileSystem", FakeAddFileSystem)
@@ -482,6 +479,6 @@ def test_cli_add_uses_workspace_and_prints_added_file(monkeypatch, capsys, tmp_p
     assert status == 0
     assert calls == [(tmp_path / "workspace", str(source), "/documents")]
     assert capsys.readouterr().out == (
-        "added: /documents/cli.txt\n"
+        "added: /documents/cli.md\n"
         "file_ref: file_cli\n"
     )

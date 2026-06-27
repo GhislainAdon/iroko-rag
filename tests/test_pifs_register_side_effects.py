@@ -2,10 +2,7 @@ from pathlib import Path
 
 import pytest
 
-
-class SummaryGenerator:
-    def generate(self, document, *, fields):
-        return {field: "Generated registration summary." for field in fields}
+from tests.pifs_markdown_fixture import register_markdown
 
 
 class RecordingSummaryIndexer:
@@ -27,14 +24,9 @@ def test_register_insert_failure_cleans_owned_artifacts_and_skips_projection(
     from pageindex.filesystem import PageIndexFileSystem
 
     workspace = tmp_path / "workspace"
-    source = tmp_path / "source.txt"
-    source.write_text("Plain text content for registration.", encoding="utf-8")
     indexer = RecordingSummaryIndexer()
-    filesystem = PageIndexFileSystem(
-        workspace=workspace,
-        metadata_generator=SummaryGenerator(),
-        summary_projection_indexer=indexer,
-    )
+    filesystem = PageIndexFileSystem(workspace=workspace)
+    filesystem.summary_projection_indexer = indexer
 
     def fail_insert(records):
         raise RuntimeError("catalog insert failed")
@@ -42,20 +34,13 @@ def test_register_insert_failure_cleans_owned_artifacts_and_skips_projection(
     monkeypatch.setattr(filesystem.store, "insert_files", fail_insert)
 
     with pytest.raises(RuntimeError, match="catalog insert failed"):
-        filesystem.register_file(
-            storage_uri=source.as_uri(),
-            folder_path="/documents",
-            external_id="doc_insert_failure",
-            title="Insert failure",
-            content=source.read_text(encoding="utf-8"),
-            metadata_policy={
-                "fields": {
-                    "summary": True,
-                    "doc_type": False,
-                    "domain": False,
-                    "topic": False,
-                }
-            },
+        register_markdown(
+            filesystem,
+            tmp_path,
+            "doc_insert_failure",
+            "/documents",
+            title="insert_failure.md",
+            text="Markdown content for registration.",
         )
 
     assert indexer.upserted == []
@@ -69,14 +54,9 @@ def test_register_failure_after_catalog_insert_cleans_catalog_and_projection(
     from pageindex.filesystem import PageIndexFileSystem
 
     workspace = tmp_path / "workspace"
-    source = tmp_path / "source.txt"
-    source.write_text("Plain text content for registration.", encoding="utf-8")
     indexer = RecordingSummaryIndexer()
-    filesystem = PageIndexFileSystem(
-        workspace=workspace,
-        metadata_generator=SummaryGenerator(),
-        summary_projection_indexer=indexer,
-    )
+    filesystem = PageIndexFileSystem(workspace=workspace)
+    filesystem.summary_projection_indexer = indexer
 
     def fail_sync(record):
         raise RuntimeError("raw sync failed")
@@ -84,24 +64,13 @@ def test_register_failure_after_catalog_insert_cleans_catalog_and_projection(
     monkeypatch.setattr(filesystem, "_sync_owned_raw_artifact", fail_sync)
 
     with pytest.raises(RuntimeError, match="raw sync failed"):
-        filesystem.register_files(
-            [
-                {
-                    "storage_uri": source.as_uri(),
-                    "folder_path": "/documents",
-                    "external_id": "doc_sync_failure",
-                    "title": "Sync failure",
-                    "content": source.read_text(encoding="utf-8"),
-                    "metadata_policy": {
-                        "fields": {
-                            "summary": True,
-                            "doc_type": False,
-                            "domain": False,
-                            "topic": False,
-                        }
-                    },
-                }
-            ]
+        register_markdown(
+            filesystem,
+            tmp_path,
+            "doc_sync_failure",
+            "/documents",
+            title="sync_failure.md",
+            text="Markdown content for registration.",
         )
 
     assert filesystem.search(None) == []

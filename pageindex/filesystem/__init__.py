@@ -3,13 +3,6 @@ from typing import TYPE_CHECKING
 
 from .commands import PIFSCommandExecutor
 from .core import PageIndexFileSystem
-from .metadata_generation import (
-    MetadataGenerationBackend,
-    MetadataGenerationError,
-    MetadataGenerationInput,
-    MetadataGenerationResult,
-    MetadataGenerator,
-)
 from .types import OpenResult, SearchResult
 
 if TYPE_CHECKING:
@@ -34,11 +27,6 @@ _LAZY_EXPORTS = {
 __all__ = [
     "OpenResult",
     "SemanticProjectionSearchBackend",
-    "MetadataGenerationBackend",
-    "MetadataGenerationError",
-    "MetadataGenerationInput",
-    "MetadataGenerationResult",
-    "MetadataGenerator",
     "PIFSCommandExecutor",
     "PageIndexFileSystem",
     "RebuildableSemanticIndex",

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from tests.pifs_markdown_fixture import register_markdown
+
 
 def _register_file(
     filesystem,
@@ -10,15 +12,14 @@ def _register_file(
     external_id: str,
     metadata: dict[str, str] | None = None,
 ) -> None:
-    source = tmp_path / filename
-    source.write_text(f"{external_id} fixture text", encoding="utf-8")
-    filesystem.register_file(
-        storage_uri=source.as_uri(),
-        folder_path=folder_path,
-        external_id=external_id,
-        title=external_id,
-        content=source.read_text(encoding="utf-8"),
-        metadata=metadata or {},
+    register_markdown(
+        filesystem,
+        tmp_path,
+        external_id,
+        folder_path,
+        title=f"{external_id}.md",
+        text=f"{external_id} fixture text",
+        metadata=metadata,
     )
 
 
@@ -64,7 +65,7 @@ def test_metadata_contains_treats_percent_and_underscore_literally(tmp_path):
     from pageindex.filesystem import PageIndexFileSystem
 
     filesystem = PageIndexFileSystem(workspace=tmp_path / "workspace")
-    filesystem.metadata.register_schema({"fields": {"status": "string"}})
+    filesystem.metadata.register_schema({"fields": {"status": {}}})
     _register_file(
         filesystem,
         tmp_path,

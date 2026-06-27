@@ -13,7 +13,7 @@ class MetadataQueryError(ValueError):
 
 class MetadataQueryEngine:
     FIELD_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
-    OPERATORS = {"$eq", "$ne", "$in", "$gt", "$gte", "$lt", "$lte", "$contains"}
+    OPERATORS = {"$eq", "$ne", "$in", "$contains"}
     LOGICAL_OPERATORS = {"$and", "$or"}
     FOLDER_SCOPE_FIELD_HINTS = {"path", "folder", "folders", "folder_path", "folder_paths"}
     MAX_DEPTH = 5
@@ -30,19 +30,14 @@ class MetadataQueryEngine:
             name = str(name)
             self.validate_field_name(name)
             if isinstance(declaration, str):
-                field_type = declaration
-                description = ""
+                description = declaration
             elif isinstance(declaration, dict):
-                field_type = str(declaration.get("type", ""))
                 description = str(declaration.get("description", ""))
             else:
                 raise MetadataQueryError(f"Invalid schema declaration for field: {name}")
-            if field_type not in {"string", "number", "boolean"}:
-                raise MetadataQueryError(f"Unsupported metadata field type for {name}: {field_type}")
             fields.append(
                 MetadataField(
                     name=name,
-                    field_type=field_type,
                     description=description,
                     source=source,
                 )
@@ -66,7 +61,7 @@ class MetadataQueryEngine:
         except json.JSONDecodeError as exc:
             raise MetadataQueryError(
                 "metadata DSL must be a JSON object, for example "
-                '\'{"$and":[{"repo":"redwood"},{"year":{"$gte":2024}}]}\''
+                '\'{"$and":[{"repo":"redwood"},{"ticker":{"$in":["AAPL","MSFT"]}}]}\''
             ) from exc
         if not isinstance(parsed, dict):
             raise MetadataQueryError("metadata DSL must be a JSON object")
@@ -114,9 +109,6 @@ class MetadataQueryEngine:
         if operator == "$contains":
             self._validate_scalar(expected, context=f"{field} $contains")
             return
-        if operator in {"$gt", "$gte", "$lt", "$lte"}:
-            self._validate_range_value(expected, context=f"{field} {operator}")
-            return
         self._validate_scalar(expected, context=f"{field} {operator}")
 
     def validate_field(self, field: str) -> None:
@@ -138,8 +130,8 @@ class MetadataQueryEngine:
         fields = {}
         for field in self.store.list_metadata_fields():
             fields[field.name] = {
-                "type": field.field_type,
                 "description": field.description,
+                "source": field.source,
             }
         return {"fields": fields}
 
@@ -152,8 +144,3 @@ class MetadataQueryEngine:
         if isinstance(value, str):
             return
         raise MetadataQueryError(f"{context} must be a string, number, or boolean")
-
-    @staticmethod
-    def _validate_range_value(value: Any, *, context: str) -> None:
-        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-            raise MetadataQueryError(f"{context} must be a string or number")

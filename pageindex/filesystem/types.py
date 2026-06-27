@@ -65,11 +65,7 @@ class FileEntry:
 @dataclass(frozen=True)
 class MetadataField:
     name: str
-    field_type: str
     description: str = ""
-    indexed: bool = True
-    faceted: bool = False
-    sortable: bool = False
     source: str = "manual"
 
 

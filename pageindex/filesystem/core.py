@@ -9,13 +9,6 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 from urllib.parse import unquote, urlparse
 
 from .metadata import MetadataQueryEngine
-from .metadata_generation import (
-    MetadataGenerationBackend,
-    MetadataGenerationError,
-    MetadataGenerationInput,
-    MetadataGenerationResult,
-    MetadataGenerator,
-)
 from .store import (
     SQLiteFileSystemStore,
     fingerprint,
@@ -27,29 +20,6 @@ from .types import OpenResult, SearchResult
 
 if TYPE_CHECKING:
     from ..client import PageIndexClient
-    from .semantic_projection import SummaryProjectionIndexer
-
-DEFAULT_METADATA_GENERATION_FIELDS = {
-    "summary": True,
-    "doc_type": True,
-    "domain": True,
-    "topic": True,
-}
-
-DEFAULT_METADATA_FIELD_TYPES = {
-    "summary": "string",
-    "doc_type": "string",
-    "domain": "string",
-    "topic": "string",
-}
-
-METADATA_STATUSES = {
-    "skipped",
-    "pending_submit",
-    "pending_generate",
-    "generated",
-    "failed",
-}
 
 PROJECTION_INDEX_STATUSES = {
     "not_indexed",
@@ -71,14 +41,10 @@ PAGEINDEX_DOCUMENT_CONTENT_TYPES = {
     "text/x-markdown",
     "application/markdown",
 }
-TEXT_ARTIFACT_SUFFIXES = {".txt", ".text"}
-TEXT_ARTIFACT_CONTENT_TYPES = {"text/plain"}
 ADD_FILE_CONTENT_TYPES = {
     ".pdf": "application/pdf",
     ".md": "text/markdown",
     ".markdown": "text/markdown",
-    ".txt": "text/plain",
-    ".text": "text/plain",
 }
 
 
@@ -99,14 +65,6 @@ class PageIndexFileSystem:
         self,
         workspace: Union[str, Path],
         *,
-        semantic_retrieval_backend: Any | None = None,
-        metadata_generator: MetadataGenerationBackend | None = None,
-        metadata_provider: str = "openai",
-        metadata_model: str | None = None,
-        metadata_base_url: str | None = None,
-        metadata_max_text_chars: int = 24000,
-        summary_projection_indexer: SummaryProjectionIndexer | None = None,
-        summary_projection_index: bool = True,
         summary_projection_index_dir: Union[str, Path, None] = None,
         summary_projection_embedding_provider: str = "openai",
         summary_projection_embedding_model: str = "text-embedding-3-small",
@@ -116,14 +74,8 @@ class PageIndexFileSystem:
         self.workspace = Path(workspace).expanduser()
         self.store = SQLiteFileSystemStore(self.workspace)
         self.metadata = MetadataQueryEngine(self.store)
-        self.semantic_retrieval_backend = semantic_retrieval_backend
-        self.metadata_generator = metadata_generator
-        self.metadata_provider = metadata_provider
-        self.metadata_model = metadata_model
-        self.metadata_base_url = metadata_base_url
-        self.metadata_max_text_chars = metadata_max_text_chars
-        self.summary_projection_indexer = summary_projection_indexer
-        self.summary_projection_index = summary_projection_index
+        self.semantic_retrieval_backend: Any | None = None
+        self.summary_projection_indexer: Any | None = None
         self.summary_projection_index_dir = (
             Path(summary_projection_index_dir).expanduser()
             if summary_projection_index_dir is not None
@@ -145,8 +97,6 @@ class PageIndexFileSystem:
         content: str = "",
         content_type: str | None = None,
         source_type: Optional[str] = None,
-        metadata_policy: Optional[dict[str, Any]] = None,
-        metadata_status: Optional[str] = None,
     ) -> str:
         return self.register_files(
             [
@@ -159,15 +109,12 @@ class PageIndexFileSystem:
                     "content": content,
                     "content_type": content_type,
                     "source_type": source_type,
-                    "metadata_policy": metadata_policy,
-                    "metadata_status": metadata_status,
                 }
             ]
         )[0]
 
     def register(self, **kwargs: Any) -> str:
-        if not self._register_uses_deferred_metadata(kwargs.get("metadata_policy")):
-            self._ensure_register_completion_defaults()
+        self._ensure_register_completion_defaults()
         return self.register_file(**kwargs)
 
     def add_file(
@@ -193,9 +140,6 @@ class PageIndexFileSystem:
         )
         if self.store.file_basename_exists_in_folder(folder_path, filename):
             raise FileExistsError(f"File already exists at {virtual_path}")
-        if not self.summary_projection_index:
-            raise RuntimeError("pifs add requires the summary projection index")
-
         self._ensure_add_completion_defaults()
         add_created_folder_paths = self._add_created_folder_paths(folder_path)
         file_ref = make_file_ref(virtual_path.strip("/"))
@@ -229,14 +173,11 @@ class PageIndexFileSystem:
                         "title": filename,
                         "content": self._add_file_content(final_path, content_type),
                         "content_type": content_type,
-                        "metadata_policy": self._add_metadata_policy(),
                     }
                 )
                 records = [record]
                 self._require_add_pageindex_ready(record)
-                self._generate_register_metadata(record)
-                self._require_add_metadata_ready(record)
-                self._register_generation_policy_schema(records)
+                self._register_custom_metadata_fields(records)
                 self.store.insert_files(records)
                 catalog_inserted = True
                 if self._complete_summary_projection_index(record):
@@ -270,18 +211,19 @@ class PageIndexFileSystem:
             record for record in records if record["file_ref"] not in preexisting_file_refs
         ]
         try:
-            for record in records:
-                self._generate_register_metadata(record)
-            self._register_generation_policy_schema(records)
+            self._register_custom_metadata_fields(records)
             self.store.insert_files(records)
             for record in records:
-                if self._complete_summary_projection_index(record):
-                    self.store.update_file_metadata_status(
-                        record["file_ref"],
-                        metadata=record["metadata"],
-                        metadata_status=record["metadata_status"],
-                    )
-                self._sync_owned_raw_artifact(record)
+                try:
+                    if self._complete_summary_projection_index(record):
+                        self.store.update_file_metadata_status(
+                            record["file_ref"],
+                            metadata=record["metadata"],
+                            metadata_status=record["metadata_status"],
+                        )
+                    self._sync_owned_raw_artifact(record)
+                except KeyError:
+                    continue
         except Exception:
             self._cleanup_add_summary_projection(new_records)
             for record in new_records:
@@ -290,47 +232,8 @@ class PageIndexFileSystem:
             raise
         return [record["file_ref"] for record in records]
 
-    def batch_generate(self, *, limit: int | None = None) -> dict[str, Any]:
-        if self.metadata_generator is None:
-            raise MetadataGenerationError(
-                "metadata_generator is required to generate pending PIFS metadata"
-            )
-        rows = self.store.list_pending_metadata_status(limit=limit)
-        generated = 0
-        failed = 0
-        file_refs: list[str] = []
-        for row in rows:
-            record = self._record_from_file_entry(row)
-            self._generate_register_metadata(record, force=True)
-            self._complete_summary_projection_index(record)
-            self._register_generation_policy_schema([record])
-            self.store.update_file_metadata_status(
-                record["file_ref"],
-                metadata=record["metadata"],
-                metadata_status=record["metadata_status"],
-            )
-            self._sync_owned_raw_artifact(record)
-            file_refs.append(record["file_ref"])
-            if record["metadata_status"]["status"] == "failed":
-                failed += 1
-            else:
-                generated += 1
-        return {
-            "processed": len(rows),
-            "generated": generated,
-            "failed": failed,
-            "file_refs": file_refs,
-        }
-
     def _ensure_register_completion_defaults(self) -> None:
-        if self.metadata_generator is None:
-            self.metadata_generator = MetadataGenerator(
-                provider=self.metadata_provider,
-                model=self.metadata_model,
-                base_url=self.metadata_base_url,
-                max_text_chars=self.metadata_max_text_chars,
-        )
-        if self.summary_projection_index and self.summary_projection_indexer is None:
+        if self.summary_projection_indexer is None:
             from .semantic_projection import SummaryProjectionIndexer
 
             self.summary_projection_indexer = SummaryProjectionIndexer.from_provider(
@@ -340,7 +243,7 @@ class PageIndexFileSystem:
                 embedding_dimensions=self.summary_projection_embedding_dimensions,
                 embedding_timeout=self.summary_projection_embedding_timeout,
             )
-        if self.summary_projection_index and self.semantic_retrieval_backend is None:
+        if self.semantic_retrieval_backend is None:
             self.configure_semantic_projection_retrieval(
                 self.summary_projection_index_dir,
                 embedding_provider=self.summary_projection_embedding_provider,
@@ -350,14 +253,7 @@ class PageIndexFileSystem:
             )
 
     def _ensure_add_completion_defaults(self) -> None:
-        if self.metadata_generator is None:
-            self.metadata_generator = MetadataGenerator(
-                provider=self.metadata_provider,
-                model=self.metadata_model,
-                base_url=self.metadata_base_url,
-                max_text_chars=self.metadata_max_text_chars,
-        )
-        if self.summary_projection_index and self.summary_projection_indexer is None:
+        if self.summary_projection_indexer is None:
             from .semantic_projection import SummaryProjectionIndexer
 
             self.summary_projection_indexer = SummaryProjectionIndexer.from_provider(
@@ -492,20 +388,6 @@ class PageIndexFileSystem:
                 continue
             return info
         return None
-
-    @staticmethod
-    def _register_uses_deferred_metadata(policy: Any) -> bool:
-        if not isinstance(policy, dict):
-            return False
-        return bool(policy.get("batch")) or policy.get("mode") == "batch"
-
-    @classmethod
-    def default_metadata_policy(cls) -> dict[str, Any]:
-        return {
-            "fields": dict(DEFAULT_METADATA_GENERATION_FIELDS),
-            "projection_indexes": {"summary": True},
-            "batch": False,
-        }
 
     def browse(
         self,
@@ -701,6 +583,34 @@ class PageIndexFileSystem:
 
     def attach_files_to_folders(self, items: list[dict[str, Any]]) -> None:
         self.store.attach_files_to_folders(items)
+
+    def set_metadata(
+        self,
+        target: str,
+        metadata: dict[str, Any],
+        *,
+        clear: bool = False,
+    ) -> dict[str, Any]:
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata must be a JSON object")
+        if "summary" in metadata:
+            raise ValueError("setmeta cannot edit PageIndex summary")
+        file_ref = self._resolve_target(target)
+        info = self.store.file_info(file_ref)
+        replacement = {} if clear else dict(metadata)
+        for name in replacement:
+            self.metadata.validate_field_name(str(name))
+        existing = dict(info.get("metadata") or {})
+        summary = existing.get("summary")
+        if summary:
+            replacement["summary"] = summary
+        self._register_custom_metadata_fields([{"metadata": replacement}])
+        self.store.update_file_metadata_status(
+            file_ref,
+            metadata=replacement,
+            metadata_status=dict(info.get("metadata_status") or {}),
+        )
+        return self.store.file_info(file_ref)
 
     def search(
         self,
@@ -946,10 +856,6 @@ class PageIndexFileSystem:
             or normalized_content_type in PAGEINDEX_DOCUMENT_CONTENT_TYPES
         ):
             return "markdown"
-        if suffix in TEXT_ARTIFACT_SUFFIXES:
-            return "text"
-        if normalized_content_type in TEXT_ARTIFACT_CONTENT_TYPES:
-            return "text"
         return "unsupported"
 
     @staticmethod
@@ -1055,9 +961,7 @@ class PageIndexFileSystem:
                 return "application/pdf"
             if suffix in PAGEINDEX_DOCUMENT_SUFFIXES:
                 return "text/markdown"
-            if suffix in TEXT_ARTIFACT_SUFFIXES:
-                return "text/plain"
-        return "text/plain"
+        return "application/octet-stream"
 
     @staticmethod
     def _canonical_path(path: Any) -> str | None:
@@ -1071,12 +975,6 @@ class PageIndexFileSystem:
             return json.loads(payload)
         except json.JSONDecodeError:
             return {"error": f"Invalid PageIndexClient JSON response: {payload}"}
-
-    def _metadata_schema(self) -> dict[str, Any]:
-        return self.metadata.export_schema()
-
-    def _register_metadata_schema(self, schema: dict[str, Any]) -> None:
-        self.metadata.register_schema(schema)
 
     def _create_folder(self, path: str) -> str:
         return self.create_folder(path)
@@ -1124,21 +1022,8 @@ class PageIndexFileSystem:
             return f"/{filename}"
         return f"{folder_path}/{filename}"
 
-    @staticmethod
-    def _add_metadata_policy() -> dict[str, Any]:
-        return {
-            "fields": {
-                "summary": True,
-                "doc_type": False,
-                "domain": False,
-                "topic": False,
-            },
-            "projection_indexes": {"summary": True},
-            "batch": False,
-        }
-
     def _add_file_content(self, path: Path, content_type: str) -> str:
-        if self._content_format(path.name, content_type) in {"markdown", "text"}:
+        if self._content_format(path.name, content_type) == "markdown":
             return path.read_text(encoding="utf-8")
         return ""
 
@@ -1155,33 +1040,8 @@ class PageIndexFileSystem:
         )
         raise RuntimeError(f"pifs add failed to build PageIndex tree: {message}")
 
-    @staticmethod
-    def _require_add_metadata_ready(record: dict[str, Any]) -> None:
-        metadata = record.get("metadata") or {}
-        summary = str(metadata.get("summary") or "").strip()
-        if not summary:
-            raise MetadataGenerationError(
-                "pifs add requires synchronous generated summary metadata"
-            )
-        status = record.get("metadata_status") or {}
-        summary_status = (status.get("fields") or {}).get("summary") or {}
-        if summary_status.get("status") != "generated":
-            raise MetadataGenerationError(
-                "pifs add requires generated summary metadata before registration"
-            )
-        if status.get("status") == "failed":
-            raise MetadataGenerationError(
-                "pifs add metadata generation failed before registration"
-            )
-
     def _require_add_summary_projection_ready(self, record: dict[str, Any]) -> None:
-        if not self.summary_projection_index:
-            return
-        summary_projection = (
-            (record.get("metadata_status") or {})
-            .get("projection_indexes", {})
-            .get("summary")
-        )
+        summary_projection = (record.get("metadata_status") or {}).get("summary_projection")
         if not summary_projection or not summary_projection.get("requested"):
             raise RuntimeError("pifs add requires a requested summary projection index")
         if summary_projection.get("status") != "ready":
@@ -1212,6 +1072,8 @@ class PageIndexFileSystem:
             title=title,
             storage_uri=storage_uri,
         )
+        if self._content_format(title, content_type) not in {"pdf", "markdown"}:
+            raise ValueError("PIFS registration supports PageIndex-backed PDF/Markdown files only")
         file_ref = make_file_ref(
             str(external_id or self._join_virtual_file_path(folder_path, title).strip("/"))
         )
@@ -1224,6 +1086,15 @@ class PageIndexFileSystem:
             title=title,
             content_type=content_type,
         )
+        if pageindex_tree_status != "built" or not pageindex_doc_id:
+            message = self._pageindex_tree_failure_message(
+                {"pageindex_tree": pageindex_tree_failure}
+            ) or "PageIndex tree was not built"
+            raise RuntimeError(f"PIFS registration requires PageIndex extraction: {message}")
+        pageindex_summary = self._pageindex_doc_description(pageindex_doc_id)
+        if not pageindex_summary:
+            raise RuntimeError("PIFS registration requires PageIndex doc_description")
+        metadata["summary"] = pageindex_summary
         artifact_content = self._registration_text_artifact_content(
             title=title,
             content_type=content_type,
@@ -1233,18 +1104,10 @@ class PageIndexFileSystem:
         )
         fts_content = file.get("fts_content", artifact_content)
         source_type = file.get("source_type")
-        metadata_policy = self._normalize_metadata_policy(
-            file.get("metadata_policy"),
-            metadata=metadata,
-        )
-        metadata_status = self._metadata_status_state(
-            metadata_policy,
-            metadata=metadata,
-            status=file.get("metadata_status"),
-        )
+        metadata_status = self._metadata_status_state(metadata=metadata)
         self._attach_pageindex_tree_failure(metadata_status, pageindex_tree_failure)
         indexed_metadata = SQLiteFileSystemStore.indexed_metadata_values(metadata)
-        searchable_metadata = dict(metadata)
+        searchable_metadata = indexed_metadata
         text_artifact_path = file.get("text_artifact_path")
         owns_text_artifact = text_artifact_path is None
         if text_artifact_path is None:
@@ -1304,6 +1167,14 @@ class PageIndexFileSystem:
         doc = client.documents.get(doc_id) or {}
         return self._pageindex_pages_text(doc.get("pages"))
 
+    def _pageindex_doc_description(self, doc_id: str) -> str:
+        client = self._pageindex_client()
+        if doc_id not in client.documents:
+            return ""
+        client._ensure_doc_loaded(doc_id)
+        doc = client.documents.get(doc_id) or {}
+        return str(doc.get("doc_description") or "").strip()
+
     @staticmethod
     def _pageindex_pages_text(pages: Any) -> str:
         if not isinstance(pages, list):
@@ -1352,15 +1223,7 @@ class PageIndexFileSystem:
 
     def _record_from_file_entry(self, entry: Any) -> dict[str, Any]:
         content = self.store.read_text(entry.file_ref)
-        metadata_policy = self._normalize_metadata_policy(
-            entry.metadata_status.get("policy", {}),
-            metadata=entry.metadata,
-        )
-        metadata_status = self._metadata_status_state(
-            metadata_policy,
-            metadata=entry.metadata,
-            status=entry.metadata_status.get("status"),
-        )
+        metadata_status = self._metadata_status_state(metadata=entry.metadata)
         self._attach_pageindex_tree_failure(
             metadata_status,
             entry.metadata_status.get("pageindex_tree"),
@@ -1383,72 +1246,17 @@ class PageIndexFileSystem:
             "metadata_status": metadata_status,
             "metadata_status_json": json.dumps(metadata_status, ensure_ascii=False),
             "indexed_metadata": SQLiteFileSystemStore.indexed_metadata_values(entry.metadata),
-            "metadata_text": metadata_text(entry.metadata),
+            "metadata_text": metadata_text(
+                SQLiteFileSystemStore.indexed_metadata_values(entry.metadata)
+            ),
             "folder_path": entry.folder_path,
             "content": content,
             "skip_fts": False,
         }
 
-    def _generate_register_metadata(self, record: dict[str, Any], *, force: bool = False) -> None:
-        status = record["metadata_status"]
-        policy = status.get("policy", {})
-        if self._metadata_policy_is_batch(policy) and not force:
-            self._mark_requested_generation_status(record, "pending_submit")
-            return
-        fields = self._metadata_fields_to_generate(record)
-        if not fields:
-            return
-        if self.metadata_generator is None:
-            if self._metadata_policy_requires_sync(policy):
-                raise MetadataGenerationError(
-                    "metadata_generator is required for synchronous PIFS metadata generation; "
-                    "set metadata_policy batch=true to defer"
-                )
-            return
-        try:
-            result = self.metadata_generator.generate(
-                MetadataGenerationInput(
-                    file_ref=record["file_ref"],
-                    external_id=record.get("external_id"),
-                    title=record["title"],
-                    content_type=record["content_type"],
-                    source_type=record.get("source_type"),
-                    text=Path(record["text_artifact_path"]).read_text(encoding="utf-8"),
-                    metadata=dict(record.get("metadata") or {}),
-                    text_artifact_path=record.get("text_artifact_path"),
-                ),
-                fields=fields,
-            )
-            if isinstance(result, dict):
-                result = MetadataGenerationResult(values=result)
-        except Exception as exc:
-            self._apply_metadata_status_failures(record, fields, str(exc))
-            return
-        failures = dict(result.failures)
-        for field in fields:
-            if field in result.values:
-                record["metadata"][field] = result.values[field]
-                status["fields"][field] = {
-                    "requested": True,
-                    "status": "generated",
-                    "owner": "pifs",
-                    "source": "llm",
-                }
-            else:
-                failures.setdefault(field, "metadata generator did not return field")
-        for field, reason in failures.items():
-            status["fields"][field] = {
-                "requested": True,
-                "status": "failed",
-                "owner": "pifs",
-                "source": "llm",
-                "error": str(reason),
-            }
-        self._refresh_record_metadata_status(record)
-
     def _complete_summary_projection_index(self, record: dict[str, Any]) -> bool:
         metadata_status = record["metadata_status"]
-        summary_index = metadata_status.get("projection_indexes", {}).get("summary")
+        summary_index = metadata_status.get("summary_projection")
         if not summary_index or not summary_index.get("requested"):
             return False
         summary = str(record.get("metadata", {}).get("summary") or "").strip()
@@ -1590,51 +1398,6 @@ class PageIndexFileSystem:
         except OSError:
             return
 
-    @staticmethod
-    def _metadata_policy_is_batch(policy: dict[str, Any]) -> bool:
-        return bool(policy.get("batch")) or policy.get("mode") == "batch"
-
-    @staticmethod
-    def _metadata_policy_requires_sync(policy: dict[str, Any]) -> bool:
-        return policy.get("batch") is False or policy.get("mode") == "sync"
-
-    def _metadata_fields_to_generate(self, record: dict[str, Any]) -> list[str]:
-        fields: list[str] = []
-        for name, state in record["metadata_status"].get("fields", {}).items():
-            if not state.get("requested"):
-                continue
-            if state.get("status") == "generated" and name in record["metadata"]:
-                continue
-            fields.append(name)
-        return fields
-
-    def _mark_requested_generation_status(self, record: dict[str, Any], status: str) -> None:
-        for name, field in record["metadata_status"].get("fields", {}).items():
-            if field.get("requested") and field.get("status") != "generated":
-                record["metadata_status"]["fields"][name] = {
-                    "requested": True,
-                    "status": status,
-                    "owner": "pifs",
-                    "source": "llm",
-                }
-        self._refresh_record_metadata_status(record, explicit_status=status)
-
-    def _apply_metadata_status_failures(
-        self,
-        record: dict[str, Any],
-        fields: list[str],
-        reason: str,
-    ) -> None:
-        for field in fields:
-            record["metadata_status"]["fields"][field] = {
-                "requested": True,
-                "status": "failed",
-                "owner": "pifs",
-                "source": "llm",
-                "error": reason,
-            }
-        self._refresh_record_metadata_status(record, explicit_status="failed")
-
     def _refresh_record_metadata_status(
         self,
         record: dict[str, Any],
@@ -1642,17 +1405,12 @@ class PageIndexFileSystem:
         explicit_status: str | None = None,
     ) -> None:
         metadata_status = record["metadata_status"]
-        statuses = [
-            field.get("status")
-            for field in metadata_status.get("fields", {}).values()
-            if field.get("requested") and field.get("status")
-        ]
-        metadata_status["status"] = explicit_status or self._aggregate_metadata_status(statuses)
-        self._refresh_projection_index_statuses(metadata_status, record["metadata"])
+        metadata_status["status"] = explicit_status or metadata_status.get("status") or "generated"
+        self._refresh_summary_projection_status(metadata_status, record["metadata"])
         record["metadata_json"] = json.dumps(record["metadata"], ensure_ascii=False)
         record["metadata_status_json"] = json.dumps(metadata_status, ensure_ascii=False)
         record["indexed_metadata"] = SQLiteFileSystemStore.indexed_metadata_values(record["metadata"])
-        record["metadata_text"] = metadata_text(record["metadata"])
+        record["metadata_text"] = metadata_text(record["indexed_metadata"])
 
     def _open_lines(self, file_ref: str, start: int, end: int) -> OpenResult:
         entry = self.store.get_file(file_ref)
@@ -1806,251 +1564,46 @@ class PageIndexFileSystem:
 
     @staticmethod
     def _validate_register_metadata(metadata: dict[str, Any]) -> None:
-        pifs_owned_fields = set(DEFAULT_METADATA_GENERATION_FIELDS)
-        conflicts = sorted(pifs_owned_fields.intersection(metadata))
-        if conflicts:
-            raise ValueError(
-                "metadata contains PIFS-owned generated field(s): "
-                + ", ".join(conflicts)
-                + "; configure metadata_policy instead of passing generated fields"
-            )
+        if "summary" in metadata:
+            raise ValueError("summary is managed by PageIndex doc_description")
 
-    def _register_generation_policy_schema(self, records: list[dict[str, Any]]) -> None:
-        pifs_fields: dict[str, dict[str, str]] = {}
-        user_fields: dict[str, dict[str, str]] = {}
+    def _register_custom_metadata_fields(self, records: list[dict[str, Any]]) -> None:
+        fields = {}
         for record in records:
-            policy_fields = record["metadata_status"]["policy"]["fields"]
-            generated_names = {str(name) for name, requested in policy_fields.items() if requested}
-            for name, requested in policy_fields.items():
-                if requested:
-                    pifs_fields[name] = {
-                        "type": DEFAULT_METADATA_FIELD_TYPES.get(
-                            name,
-                            self._infer_metadata_field_type(
-                                record.get("metadata", {}).get(name)
-                            ),
-                        )
-                    }
-            for name, value in record.get("metadata", {}).items():
-                if name in generated_names:
-                    pifs_fields.setdefault(name, {"type": self._infer_metadata_field_type(value)})
-                else:
-                    user_fields.setdefault(name, {"type": self._infer_metadata_field_type(value)})
-        if pifs_fields:
-            self.metadata.register_schema({"fields": pifs_fields}, source="pifs")
-        if user_fields:
-            self.metadata.register_schema({"fields": user_fields}, source="user")
+            for name in SQLiteFileSystemStore.indexed_metadata_values(
+                record.get("metadata", {})
+            ):
+                if self.metadata.FIELD_RE.match(str(name)):
+                    fields[str(name)] = {}
+        if fields:
+            self.metadata.register_schema({"fields": fields}, source="user")
 
-    @classmethod
-    def _normalize_metadata_policy(
-        cls,
-        policy: Optional[dict[str, Any]],
-        *,
-        metadata: dict[str, Any],
-    ) -> dict[str, Any]:
-        fields = dict(DEFAULT_METADATA_GENERATION_FIELDS)
-        field_statuses: dict[str, str] = {}
-        projection_indexes: dict[str, bool] | None = None
-        projection_index_statuses: dict[str, str] = {}
-        mode = None
-        batch = None
-        top_level_status = None
-        if policy is not None:
-            if not isinstance(policy, dict):
-                raise ValueError("metadata_policy must be a JSON object")
-            raw_fields = policy.get("fields")
-            if raw_fields is None:
-                raw_fields = {
-                    name: declaration
-                    for name, declaration in policy.items()
-                    if name not in {"batch", "mode", "status", "projection_indexes"}
-                }
-            if not isinstance(raw_fields, dict):
-                raise ValueError("metadata_policy fields must be a JSON object")
-            for name, declaration in raw_fields.items():
-                name = str(name)
-                if isinstance(declaration, bool):
-                    fields[name] = declaration
-                    continue
-                if isinstance(declaration, dict):
-                    fields[name] = bool(
-                        declaration.get("enabled", declaration.get("requested", True))
-                    )
-                    field_status = declaration.get("status")
-                    if field_status is not None:
-                        cls._validate_metadata_status(str(field_status))
-                        field_statuses[name] = str(field_status)
-                    continue
-                raise ValueError(f"Invalid metadata generation policy for field: {name}")
-            mode = policy.get("mode")
-            if "batch" in policy:
-                batch = bool(policy["batch"])
-            elif mode == "batch":
-                batch = True
-            top_level_status = policy.get("status")
-            if top_level_status is not None:
-                cls._validate_metadata_status(str(top_level_status))
-            if "projection_indexes" in policy:
-                projection_indexes, projection_index_statuses = (
-                    cls._normalize_projection_index_policy(policy["projection_indexes"])
-                )
-        normalized: dict[str, Any] = {
-            "fields": fields,
-            "projection_indexes": (
-                projection_indexes
-                if projection_indexes is not None
-                else {"summary": bool(fields.get("summary", False))}
-            ),
-        }
-        if field_statuses:
-            normalized["field_statuses"] = field_statuses
-        if projection_index_statuses:
-            normalized["projection_index_statuses"] = projection_index_statuses
-        if mode:
-            normalized["mode"] = str(mode)
-        if batch is not None:
-            normalized["batch"] = batch
-        if top_level_status:
-            normalized["status"] = str(top_level_status)
-        return normalized
-
-    @classmethod
-    def _metadata_status_state(
-        cls,
-        policy: dict[str, Any],
-        *,
-        metadata: dict[str, Any],
-        status: Optional[str],
-    ) -> dict[str, Any]:
-        explicit_status = status or policy.get("status")
-        if explicit_status is not None:
-            explicit_status = str(explicit_status)
-            cls._validate_metadata_status(explicit_status)
-        field_statuses = policy.get("field_statuses", {})
-        fields: dict[str, dict[str, Any]] = {}
-        for name, requested in policy["fields"].items():
-            if not requested:
-                fields[name] = {
-                    "requested": False,
-                    "status": "skipped",
-                    "owner": "pifs",
-                    "source": "llm",
-                }
-                continue
-            field_status = field_statuses.get(name)
-            if field_status is None:
-                field_status = explicit_status
-            if field_status is None:
-                field_status = "generated" if name in metadata else "pending_generate"
-            fields[name] = {
-                "requested": True,
-                "status": field_status,
-                "owner": "pifs",
-                "source": "llm",
-            }
-
-        requested_statuses = [
-            item["status"]
-            for item in fields.values()
-            if item.get("requested") and item.get("status")
-        ]
-        aggregate_status = explicit_status or cls._aggregate_metadata_status(requested_statuses)
-        policy_summary = {
-            "fields": dict(policy["fields"]),
-            "projection_indexes": dict(policy.get("projection_indexes", {})),
-        }
-        if "mode" in policy:
-            policy_summary["mode"] = policy["mode"]
-        if "batch" in policy:
-            policy_summary["batch"] = policy["batch"]
+    @staticmethod
+    def _metadata_status_state(*, metadata: dict[str, Any]) -> dict[str, Any]:
         state = {
-            "status": aggregate_status,
-            "policy": policy_summary,
-            "fields": fields,
-            "projection_indexes": {},
-        }
-        projection_statuses = policy.get("projection_index_statuses", {})
-        for name, requested in policy.get("projection_indexes", {}).items():
-            if not requested:
-                continue
-            state["projection_indexes"][name] = {
+            "status": "generated",
+            "summary_projection": {
                 "requested": True,
-                "status": projection_statuses.get(name, "not_indexed"),
+                "status": "not_indexed",
                 "owner": "pifs",
                 "source": "index",
-            }
-        cls._refresh_projection_index_statuses(state, metadata)
+            },
+        }
+        PageIndexFileSystem._refresh_summary_projection_status(state, metadata)
         return state
 
     @staticmethod
-    def _aggregate_metadata_status(statuses: list[str]) -> str:
-        if not statuses:
-            return "generated"
-        for status in ("failed", "pending_submit", "pending_generate"):
-            if status in statuses:
-                return status
-        return "generated"
-
-    @staticmethod
-    def _validate_metadata_status(status: str) -> None:
-        if status not in METADATA_STATUSES:
-            raise ValueError(f"Unsupported metadata status: {status}")
-
-    @classmethod
-    def _normalize_projection_index_policy(
-        cls,
-        projection_policy: Any,
-    ) -> tuple[dict[str, bool], dict[str, str]]:
-        if projection_policy is None:
-            return {}, {}
-        if not isinstance(projection_policy, dict):
-            raise ValueError("metadata_policy projection_indexes must be a JSON object")
-        projection_indexes: dict[str, bool] = {}
-        projection_index_statuses: dict[str, str] = {}
-        for name, declaration in projection_policy.items():
-            name = str(name)
-            if isinstance(declaration, bool):
-                projection_indexes[name] = declaration
-                continue
-            if isinstance(declaration, dict):
-                projection_indexes[name] = bool(
-                    declaration.get("enabled", declaration.get("requested", True))
-                )
-                status = declaration.get("status")
-                if status is not None:
-                    status = str(status)
-                    cls._validate_projection_index_status(status)
-                    projection_index_statuses[name] = status
-                continue
-            raise ValueError(f"Invalid projection index policy for index: {name}")
-        return projection_indexes, projection_index_statuses
-
-    @staticmethod
-    def _validate_projection_index_status(status: str) -> None:
-        if status not in PROJECTION_INDEX_STATUSES:
-            raise ValueError(f"Unsupported projection index status: {status}")
-
-    @classmethod
-    def _refresh_projection_index_statuses(
-        cls,
+    def _refresh_summary_projection_status(
         metadata_status: dict[str, Any],
         metadata: dict[str, Any],
     ) -> None:
-        summary_index = metadata_status.get("projection_indexes", {}).get("summary")
+        summary_index = metadata_status.get("summary_projection")
         if not summary_index or not summary_index.get("requested"):
             return
         if "summary" not in metadata:
             return
         if summary_index.get("status", "not_indexed") == "not_indexed":
             summary_index["status"] = "pending_index"
-
-    @staticmethod
-    def _infer_metadata_field_type(value: Any) -> str:
-        if isinstance(value, bool):
-            return "boolean"
-        if isinstance(value, (int, float)):
-            return "number"
-        return "string"
 
     @staticmethod
     def _scope_folder_path(scope: Optional[dict[str, Any]]) -> Optional[str]:

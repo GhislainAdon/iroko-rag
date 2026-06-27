@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from tests.pifs_markdown_fixture import register_markdown
+
 
 class BrowseBackend:
     def __init__(self, document_ids, channels=("summary",), file_refs_by_document_id=None):
@@ -47,14 +49,13 @@ def _payload(output):
 
 
 def _register_file(filesystem, root, external_id, folder_path, *, title=None, text=None):
-    source = root / f"{external_id}.txt"
-    source.write_text(text or f"{external_id} alpha evidence", encoding="utf-8")
-    return filesystem.register_file(
-        storage_uri=source.as_uri(),
-        folder_path=folder_path,
-        external_id=external_id,
-        title=title or f"{external_id}.txt",
-        content=source.read_text(encoding="utf-8"),
+    return register_markdown(
+        filesystem,
+        root,
+        external_id,
+        folder_path,
+        title=title or f"{external_id}.md",
+        text=text,
         metadata={"department": "finance"},
     )
 
@@ -186,17 +187,17 @@ class PIFSCoreAlignmentTest(unittest.TestCase):
                 root,
                 "doc_a",
                 "/documents",
-                title="report.txt",
+                title="report.md",
                 text="alpha evidence\nbeta evidence",
             )
             executor = PIFSCommandExecutor(filesystem)
 
-            stat = _payload(executor.execute("stat /documents/report.txt"))
+            stat = _payload(executor.execute("stat /documents/report.md"))
             self.assertTrue(stat["success"])
             self.assertEqual(stat["data"]["document"]["document_id"], "doc_a")
             self.assertTrue(stat["data"]["document"]["file_ref"].startswith("file_"))
 
-            grep = _payload(executor.execute("grep alpha /documents/report.txt"))
+            grep = _payload(executor.execute("grep alpha /documents/report.md"))
             self.assertTrue(grep["success"])
             self.assertEqual(grep["data"]["document"]["document_id"], "doc_a")
             self.assertEqual(
@@ -212,7 +213,18 @@ class PIFSCoreAlignmentTest(unittest.TestCase):
         from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
 
         class FakePageClient:
-            documents = {"pi_doc": {}}
+            documents = {
+                "pi_doc": {
+                    "doc_description": "Summary for report.md",
+                    "pages": [{"page": 1, "content": "cached text"}],
+                }
+            }
+
+            def index(self, file_path, mode="auto"):
+                return "pi_doc"
+
+            def _ensure_doc_loaded(self, doc_id):
+                return None
 
             def get_document_structure(self, doc_id):
                 assert doc_id == "pi_doc"
@@ -232,7 +244,7 @@ class PIFSCoreAlignmentTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            source = root / "report"
+            source = root / "report.md"
             source.write_text("cached text", encoding="utf-8")
             filesystem = PageIndexFileSystem(workspace=root / "workspace")
             filesystem._pageindex_client = lambda: FakePageClient()
@@ -240,7 +252,8 @@ class PIFSCoreAlignmentTest(unittest.TestCase):
                 storage_uri=source.as_uri(),
                 folder_path="/documents",
                 external_id="doc_pdf",
-                title="report",
+                title="report.md",
+                content_type="text/markdown",
                 content="cached text",
             )
             filesystem.store.update_pageindex_pointer(
@@ -302,20 +315,15 @@ class PIFSCoreAlignmentTest(unittest.TestCase):
 
     def test_projection_surface_is_summary(self):
         from pageindex.filesystem.core import (
-            DEFAULT_METADATA_GENERATION_FIELDS,
             SEMANTIC_PROJECTION_INDEX_NAMES,
             SEMANTIC_RETRIEVAL_CHANNELS,
         )
-        from pageindex.filesystem.metadata_generation import GENERATED_METADATA_FIELDS
         semantic_projection_source = Path("pageindex/filesystem/semantic_projection.py").read_text(
             encoding="utf-8"
         )
 
         self.assertEqual(SEMANTIC_RETRIEVAL_CHANNELS, ("summary",))
         self.assertEqual(SEMANTIC_PROJECTION_INDEX_NAMES, {"summary": "summary"})
-        self.assertNotIn("entity", DEFAULT_METADATA_GENERATION_FIELDS)
-        self.assertNotIn("relation", DEFAULT_METADATA_GENERATION_FIELDS)
-        self.assertEqual(GENERATED_METADATA_FIELDS, ("summary", "doc_type", "domain", "topic"))
         self.assertIn('SUMMARY_INDEX_NAME = "summary"', semantic_projection_source)
         self.assertNotIn("entity_vectors", semantic_projection_source)
         self.assertNotIn("relation_vectors", semantic_projection_source)

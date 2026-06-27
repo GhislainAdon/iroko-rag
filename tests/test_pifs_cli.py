@@ -166,6 +166,69 @@ def test_cli_set_workspace_persists_default(monkeypatch, capsys, tmp_path):
     )
 
 
+def test_cli_setmeta_replaces_document_metadata(monkeypatch, capsys, tmp_path):
+    from pageindex.filesystem import cli
+
+    workspace = tmp_path / "workspace"
+    calls = []
+
+    class FakeSetMetaFileSystem(FakeFileSystem):
+        def set_metadata(self, target, metadata, *, clear=False):
+            calls.append((self.workspace, target, metadata, clear))
+            return {
+                "path": "/documents/report.md",
+                "file_ref": "file_report",
+                "metadata": metadata,
+            }
+
+    monkeypatch.setattr(cli, "PageIndexFileSystem", FakeSetMetaFileSystem)
+
+    status = cli.main(
+        [
+            "--workspace",
+            str(workspace),
+            "setmeta",
+            "/documents/report.md",
+            '{"ticker":"AAPL"}',
+        ]
+    )
+
+    assert status == 0
+    assert calls == [
+        (workspace, "/documents/report.md", {"ticker": "AAPL"}, False)
+    ]
+    assert json.loads(capsys.readouterr().out) == {
+        "file_ref": "file_report",
+        "metadata": {"ticker": "AAPL"},
+        "path": "/documents/report.md",
+    }
+
+
+def test_cli_setmeta_clear_uses_empty_object(monkeypatch, capsys, tmp_path):
+    from pageindex.filesystem import cli
+
+    workspace = tmp_path / "workspace"
+    calls = []
+
+    class FakeSetMetaFileSystem(FakeFileSystem):
+        def set_metadata(self, target, metadata, *, clear=False):
+            calls.append((self.workspace, target, metadata, clear))
+            return {"file_ref": "file_report", "metadata": metadata}
+
+    monkeypatch.setattr(cli, "PageIndexFileSystem", FakeSetMetaFileSystem)
+
+    status = cli.main(
+        ["--workspace", str(workspace), "setmeta", "--clear", "/documents/report.md"]
+    )
+
+    assert status == 0
+    assert calls == [(workspace, "/documents/report.md", {}, True)]
+    assert json.loads(capsys.readouterr().out) == {
+        "file_ref": "file_report",
+        "metadata": {},
+    }
+
+
 def test_cli_passthrough_uses_configured_workspace(monkeypatch, capsys, tmp_path):
     from pageindex.filesystem import cli
 

@@ -297,6 +297,33 @@ def _run_add(argv: list[str], *, workspace: str) -> int:
     return 0
 
 
+def _run_setmeta(argv: list[str], *, workspace: str) -> int:
+    parser = argparse.ArgumentParser(
+        prog="pifs setmeta",
+        description="Replace custom metadata for one PIFS document",
+    )
+    parser.add_argument("--clear", action="store_true")
+    parser.add_argument("target")
+    parser.add_argument("metadata_json", nargs="?")
+    args = parser.parse_args(argv)
+
+    if args.clear:
+        if args.metadata_json is not None:
+            parser.error("setmeta --clear accepts only a document target")
+        metadata = {}
+    else:
+        if args.metadata_json is None:
+            parser.error("setmeta requires a JSON object")
+        metadata = json.loads(args.metadata_json)
+        if not isinstance(metadata, dict):
+            parser.error("setmeta metadata must be a JSON object")
+
+    filesystem = _filesystem_from_workspace(workspace)
+    info = filesystem.set_metadata(args.target, metadata, clear=args.clear)
+    print(json.dumps(info, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def _run_set(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="pifs set",
@@ -346,6 +373,10 @@ def main(argv: list[str] | None = None) -> int:
             if not args.workspace:
                 parser.error("--workspace is required unless PIFS_WORKSPACE is set or `pifs set workspace <path>` has been run")
             return _run_add(command_args, workspace=args.workspace)
+        if command_name == "setmeta":
+            if not args.workspace:
+                parser.error("--workspace is required unless PIFS_WORKSPACE is set or `pifs set workspace <path>` has been run")
+            return _run_setmeta(command_args, workspace=args.workspace)
 
         if not args.workspace:
             parser.error("--workspace is required unless PIFS_WORKSPACE is set or `pifs set workspace <path>` has been run")

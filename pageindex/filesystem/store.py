@@ -4,7 +4,6 @@ import hashlib
 import json
 import re
 import sqlite3
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -29,7 +28,6 @@ class SQLiteFileSystemStore:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.create_function("pifs_decimal_compare", 2, self._decimal_compare)
         return conn
 
     def initialize_schema(self) -> None:
@@ -84,38 +82,20 @@ class SQLiteFileSystemStore:
                 FOREIGN KEY(folder_id) REFERENCES folders(folder_id) ON DELETE CASCADE
             );
 
-            CREATE TABLE IF NOT EXISTS metadata_schema (
-                schema_id TEXT PRIMARY KEY,
-                scope_path TEXT,
-                version INTEGER NOT NULL DEFAULT 1,
-                status TEXT NOT NULL DEFAULT 'active',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-
             CREATE TABLE IF NOT EXISTS metadata_fields (
                 field_id TEXT PRIMARY KEY,
-                schema_id TEXT NOT NULL DEFAULT 'default',
                 name TEXT NOT NULL,
-                type TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
-                indexed INTEGER NOT NULL DEFAULT 1,
-                faceted INTEGER NOT NULL DEFAULT 0,
-                sortable INTEGER NOT NULL DEFAULT 0,
                 source TEXT NOT NULL DEFAULT 'manual',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(schema_id, name),
-                FOREIGN KEY(schema_id) REFERENCES metadata_schema(schema_id)
+                UNIQUE(name)
             );
 
             CREATE TABLE IF NOT EXISTS metadata_values (
                 file_ref TEXT NOT NULL,
                 field_id TEXT NOT NULL,
-                value_text TEXT,
-                value_number REAL,
-                value_bool INTEGER,
-                value_json TEXT,
+                value_text TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(file_ref) REFERENCES files(file_ref) ON DELETE CASCADE,
                 FOREIGN KEY(field_id) REFERENCES metadata_fields(field_id) ON DELETE CASCADE
@@ -131,13 +111,6 @@ class SQLiteFileSystemStore:
             CREATE INDEX IF NOT EXISTS idx_file_folders_folder ON file_folders(folder_id);
             CREATE INDEX IF NOT EXISTS idx_metadata_fields_name ON metadata_fields(name);
             CREATE INDEX IF NOT EXISTS idx_metadata_values_field_text ON metadata_values(field_id, value_text);
-            CREATE INDEX IF NOT EXISTS idx_metadata_values_field_number ON metadata_values(field_id, value_number);
-            """
-        )
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO metadata_schema(schema_id, scope_path, version, status)
-            VALUES ('default', NULL, 1, 'active')
             """
         )
 
@@ -172,7 +145,7 @@ class SQLiteFileSystemStore:
             metadata_field_ids = {
                 row["name"]: row["field_id"]
                 for row in conn.execute(
-                    "SELECT name, field_id FROM metadata_fields WHERE schema_id = 'default'"
+                    "SELECT name, field_id FROM metadata_fields"
                 ).fetchall()
             }
             for record in records:
@@ -236,8 +209,8 @@ class SQLiteFileSystemStore:
                 conn.executemany(
                     """
                     INSERT INTO metadata_values(
-                        file_ref, field_id, value_text, value_number, value_bool, value_json
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        file_ref, field_id, value_text
+                    ) VALUES (?, ?, ?)
                     """,
                     metadata_rows,
                 )
@@ -322,10 +295,7 @@ class SQLiteFileSystemStore:
                     (
                         file_ref,
                         field_id,
-                        item["value_text"],
-                        item["value_number"],
-                        item["value_bool"],
-                        item["value_json"],
+                        item,
                     )
                 )
         return values
@@ -490,16 +460,13 @@ class SQLiteFileSystemStore:
                 conn.execute(
                     """
                     INSERT INTO metadata_values(
-                        file_ref, field_id, value_text, value_number, value_bool, value_json
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        file_ref, field_id, value_text
+                    ) VALUES (?, ?, ?)
                     """,
                     (
                         file_ref,
                         field_id,
-                        item["value_text"],
-                        item["value_number"],
-                        item["value_bool"],
-                        item["value_json"],
+                        item,
                     ),
                 )
 
@@ -509,7 +476,7 @@ class SQLiteFileSystemStore:
             """
             SELECT field_id
             FROM metadata_fields
-            WHERE schema_id = 'default' AND name = ?
+            WHERE name = ?
             """,
             (name,),
         ).fetchone()
@@ -540,32 +507,21 @@ class SQLiteFileSystemStore:
         if conn is None:
             conn = self.connect()
         try:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO metadata_schema(schema_id, scope_path, version, status)
-                VALUES ('default', NULL, 1, 'active')
-                """
-            )
             for field in fields:
                 conn.execute(
                     """
                     INSERT INTO metadata_fields(
-                        field_id, schema_id, name, type, description,
-                        indexed, faceted, sortable, source, updated_at
-                    ) VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(schema_id, name) DO UPDATE SET
-                        type = excluded.type,
+                        field_id, name, description, source, updated_at
+                    ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(name) DO UPDATE SET
+                        description = excluded.description,
                         source = excluded.source,
                         updated_at = CURRENT_TIMESTAMP
                     """,
                     (
                         self.field_id(field.name),
                         field.name,
-                        field.field_type,
                         field.description,
-                        int(field.indexed),
-                        int(field.faceted),
-                        int(field.sortable),
                         field.source,
                     ),
                 )
@@ -578,7 +534,7 @@ class SQLiteFileSystemStore:
     def metadata_field_exists(self, name: str) -> bool:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT 1 FROM metadata_fields WHERE schema_id = 'default' AND name = ?",
+                "SELECT 1 FROM metadata_fields WHERE name = ?",
                 (name,),
             ).fetchone()
         return row is not None
@@ -587,20 +543,15 @@ class SQLiteFileSystemStore:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT name, type, description, indexed, faceted, sortable, source
+                SELECT name, description, source
                 FROM metadata_fields
-                WHERE schema_id = 'default'
                 ORDER BY name
                 """
             ).fetchall()
         return [
             MetadataField(
                 name=row["name"],
-                field_type=row["type"],
                 description=row["description"],
-                indexed=bool(row["indexed"]),
-                faceted=bool(row["faceted"]),
-                sortable=bool(row["sortable"]),
                 source=row["source"],
             )
             for row in rows
@@ -1076,18 +1027,6 @@ class SQLiteFileSystemStore:
         operator, expected = next(iter(condition.items()))
         field_id = self.field_id(field)
         if operator == "$eq":
-            if self._is_numeric_metadata_value(expected):
-                return (
-                    """
-                    EXISTS (
-                        SELECT 1 FROM metadata_values mv
-                        WHERE mv.file_ref = f.file_ref
-                          AND mv.field_id = ?
-                          AND pifs_decimal_compare(mv.value_text, ?) = 0
-                    )
-                    """,
-                    [field_id, self._metadata_compare_text(expected)],
-                )
             return (
                 """
                 EXISTS (
@@ -1100,18 +1039,6 @@ class SQLiteFileSystemStore:
                 [field_id, self._metadata_compare_text(expected)],
             )
         if operator == "$ne":
-            if self._is_numeric_metadata_value(expected):
-                return (
-                    """
-                    NOT EXISTS (
-                        SELECT 1 FROM metadata_values mv
-                        WHERE mv.file_ref = f.file_ref
-                          AND mv.field_id = ?
-                          AND pifs_decimal_compare(mv.value_text, ?) = 0
-                    )
-                    """,
-                    [field_id, self._metadata_compare_text(expected)],
-                )
             return (
                 """
                 NOT EXISTS (
@@ -1127,26 +1054,17 @@ class SQLiteFileSystemStore:
             values = list(expected)
             if not values:
                 return "0", []
-            value_clauses = []
-            value_params: list[Any] = []
-            for item in values:
-                if self._is_numeric_metadata_value(item):
-                    value_clauses.append("pifs_decimal_compare(mv.value_text, ?) = 0")
-                else:
-                    value_clauses.append("mv.value_text = ?")
-                value_params.append(self._metadata_compare_text(item))
+            placeholders = ", ".join("?" for _ in values)
             return (
-                """
+                f"""
                 EXISTS (
                     SELECT 1 FROM metadata_values mv
                     WHERE mv.file_ref = f.file_ref
                       AND mv.field_id = ?
-                      AND (
-                        """ + " OR ".join(value_clauses) + """
-                      )
+                      AND mv.value_text IN ({placeholders})
                 )
                 """,
-                [field_id, *value_params],
+                [field_id, *(self._metadata_compare_text(item) for item in values)],
             )
         if operator == "$contains":
             return (
@@ -1160,36 +1078,6 @@ class SQLiteFileSystemStore:
                 """,
                 [field_id, self._contains_like(self._metadata_compare_text(expected))],
             )
-        if operator in {"$gt", "$gte", "$lt", "$lte"}:
-            comparator = {
-                "$gt": ">",
-                "$gte": ">=",
-                "$lt": "<",
-                "$lte": "<=",
-            }[operator]
-            if isinstance(expected, (int, float)) and not isinstance(expected, bool):
-                return (
-                    f"""
-                    EXISTS (
-                        SELECT 1 FROM metadata_values mv
-                        WHERE mv.file_ref = f.file_ref
-                          AND mv.field_id = ?
-                          AND pifs_decimal_compare(mv.value_text, ?) {comparator} 0
-                    )
-                    """,
-                    [field_id, self._metadata_compare_text(expected)],
-                )
-            return (
-                f"""
-                EXISTS (
-                    SELECT 1 FROM metadata_values mv
-                    WHERE mv.file_ref = f.file_ref
-                      AND mv.field_id = ?
-                      AND mv.value_text {comparator} ?
-                )
-                """,
-                [field_id, self._metadata_compare_text(expected)],
-            )
         raise ValueError(f"Unsupported metadata operator: {operator}")
 
     def get_file(self, file_ref: str) -> FileEntry:
@@ -1198,43 +1086,6 @@ class SQLiteFileSystemStore:
         if row is None:
             raise KeyError(f"Unknown file_ref: {file_ref}")
         return self._file_entry(row)
-
-    def list_pending_metadata_status(self, *, limit: int | None = None) -> list[FileEntry]:
-        sql = """
-            SELECT
-                f.file_ref,
-                f.external_id,
-                f.storage_uri,
-                f.title,
-                f.descriptor,
-                f.content_type,
-                f.source_type,
-                f.fingerprint,
-                f.text_artifact_path,
-                f.raw_artifact_path,
-                f.pageindex_doc_id,
-                f.pageindex_tree_status,
-                f.metadata_json,
-                f.metadata_status_json,
-                COALESCE(primary_folder.path, '/') AS folder_path
-            FROM files f
-            LEFT JOIN file_folders ff ON ff.file_ref = f.file_ref
-            LEFT JOIN folders primary_folder ON primary_folder.folder_id = ff.folder_id
-            WHERE f.deleted_at IS NULL
-              AND (
-                f.metadata_status_json LIKE '%pending_generate%'
-                OR f.metadata_status_json LIKE '%pending_submit%'
-              )
-            GROUP BY f.file_ref
-            ORDER BY f.created_at, f.file_ref
-        """
-        params: list[Any] = []
-        if limit is not None:
-            sql += " LIMIT ?"
-            params.append(int(limit))
-        with self.connect() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [self._file_entry(row) for row in rows]
 
     def update_file_metadata_status(
         self,
@@ -1247,7 +1098,8 @@ class SQLiteFileSystemStore:
             row = self._file_entry_row(conn, file_ref)
             if row is None:
                 raise KeyError(f"Unknown file_ref: {file_ref}")
-            metadata_text_value = metadata_text(metadata)
+            indexed_metadata = self.indexed_metadata_values(metadata)
+            metadata_text_value = metadata_text(indexed_metadata)
             conn.execute(
                 """
                 UPDATE files
@@ -1265,7 +1117,7 @@ class SQLiteFileSystemStore:
             self.replace_metadata_values(
                 conn,
                 file_ref,
-                self.indexed_metadata_values(metadata),
+                indexed_metadata,
             )
             conn.execute(
                 """
@@ -2163,7 +2015,7 @@ class SQLiteFileSystemStore:
         return unique_terms
 
     @staticmethod
-    def _metadata_value_items(value: Any) -> list[dict[str, Any]]:
+    def _metadata_value_items(value: Any) -> list[str]:
         if value is None:
             return []
         if isinstance(value, list):
@@ -2171,16 +2023,7 @@ class SQLiteFileSystemStore:
             for item in value:
                 items.extend(SQLiteFileSystemStore._metadata_value_items(item))
             return items
-        value_json = json.dumps(value, ensure_ascii=False, sort_keys=True)
-        value_text = SQLiteFileSystemStore._metadata_compare_text(value)
-        return [
-            {
-                "value_text": value_text,
-                "value_number": float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None,
-                "value_bool": int(value) if isinstance(value, bool) else None,
-                "value_json": value_json,
-            }
-        ]
+        return [SQLiteFileSystemStore._metadata_compare_text(value)]
 
     @staticmethod
     def _metadata_compare_text(value: Any) -> str:
@@ -2191,25 +2034,8 @@ class SQLiteFileSystemStore:
         return "" if value is None else str(value)
 
     @staticmethod
-    def _is_numeric_metadata_value(value: Any) -> bool:
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-    @staticmethod
-    def _decimal_compare(left: Any, right: Any) -> int | None:
-        try:
-            left_decimal = Decimal(str(left))
-            right_decimal = Decimal(str(right))
-            if left_decimal < right_decimal:
-                return -1
-            if left_decimal > right_decimal:
-                return 1
-        except (InvalidOperation, ValueError):
-            return None
-        return 0
-
-    @staticmethod
     def indexed_metadata_values(metadata: dict[str, Any]) -> dict[str, Any]:
-        return dict(metadata)
+        return {key: value for key, value in metadata.items() if key != "summary"}
 
     @staticmethod
     def _valid_field_name(name: str) -> bool:
