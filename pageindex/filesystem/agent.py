@@ -10,7 +10,7 @@ import time
 from dataclasses import asdict, is_dataclass
 from typing import Any, Mapping, TextIO
 
-from .commands import PIFSCommandError, PIFSCommandExecutor
+from .commands import PIFSCommandExecutor
 from .core import PageIndexFileSystem
 
 
@@ -34,20 +34,16 @@ related questions and invite them to ask about files, folders, metadata, or
 document contents in the workspace.
 
 If the user asks what tools or capabilities you have, describe only the PIFS
-virtual shell capabilities available inside this workspace: ls, tree, find,
-stat, grep, cat, and browse when they are available. Do not mention host
-runtime tools, SDK internals, or orchestration helpers that are not part of the
-PIFS shell.
+virtual shell capabilities available inside this workspace: tree, browse,
+stat, cat, grep, and ls as an alias for tree -L 1. Do not mention host runtime
+tools, SDK internals, or orchestration helpers that are not part of the PIFS
+shell.
 
 If the user asks a workspace-related topic question without naming a specific
-file, treat it as a retrieval task. Start with ls or tree to understand the
-folder structure, choose a folder, then use browse with the user's topic as the
-query to find candidate files. Inspect evidence before answering. Ask the user
-to clarify only after a reasonable search cannot identify relevant evidence.
-Do not conclude that no relevant document exists from one failed grep. If grep
-returns no matches for a workspace topic, use browse on a relevant folder or
-inspect likely document structure before saying that the workspace lacks
-evidence.
+file, treat it as a retrieval task. Start with tree to understand folder
+structure, choose a folder, then use browse with the user's topic as the query
+to find candidate files. Inspect evidence before answering. Ask the user to
+clarify only after the persistence protocol cannot identify relevant evidence.
 
 Follow the task prompt for command policy, retrieval strategy, and answer
 format. If the caller needs stricter behavior, pass an explicit system_prompt.
@@ -55,75 +51,49 @@ format. If the caller needs stricter behavior, pass an explicit system_prompt.
 
 BASH_TOOL_DESCRIPTION = """
 Run a command in the PageIndex FileSystem virtual shell. This is not a real
-operating-system shell. By default the tool is read-only: use ls, tree, find,
-grep, cat, stat, and browse when listed in the workspace
-context. grep -R is lexical evidence search; grep does not support regex
-alternation such as "a|b"; run multiple grep commands or use browse for
-relevance-ranked file discovery instead. Use grep <query> <file> for one
-selected file; use grep -R only with folder targets. Start broad workspace
-questions with ls or tree to understand folders. After choosing a folder, use positional
-browse syntax with a quoted query, for example:
-browse /documents "Federal Reserve". If the relevant folder is uncertain, use
-browse -R /documents "Federal Reserve" to retrieve file candidates across that
-folder tree. browse returns file candidates only; it does not perform folder
-semantic recall and does not guarantee final answer evidence. After choosing a
-likely browse candidate, verify the relevant claim with cat or grep before
-answering. Errors are returned as text prefixed with ERROR. Do not call commands
-that are not listed as available. When evidence is required, inspect it with cat
-or grep before answering. Prefer shell-like target-first cat syntax with stable
-targets: cat <path> --structure and cat <path> --page 31-59. You may also use
-file_ref or document_id when a path is ambiguous. Do not reconstruct paths from
-document titles; use exact targets returned by PIFS commands and quote paths
-containing spaces. Use cat <path> --structure to inspect the document structure
-JSON, then cat <path> --page <range> for exact page text evidence. Page reads
-are limited to five pages at once, and text cat --all returns only the first
-page of text lines. If a cat limit error requires a smaller call, stop when the
-evidence is sufficient; otherwise continue with another chunk before answering.
-Do not use cat --page as the first inspection command for a selected PDF or
-PageIndex document; run cat <target> --structure for that same target first.
-Do not guess PDF page numbers from grep line numbers or text offsets.
-For questions about metadata fields, available summaries, or whether metadata
-was provided, inspect stat --schema and stat <target> before making claims.
-Do not use stat as a general content/topic discovery step. For document Q&A,
-prefer ls/tree for folder selection, browse for file candidates, then cat
---structure and cat --page for evidence.
+operating-system shell. The tool is read-only and always returns JSON.
+Use only: tree, browse, stat, cat, grep, and ls as an exact alias for tree -L 1.
+Start broad workspace questions with tree. Then choose a folder and run
+browse <folder> "<query>" for document discovery. Use browse -R only after
+inspecting plausible folder scopes or rephrasing. Browse returns document
+candidates only, not final evidence. Use stat only for identity, status, or
+metadata. Use cat <file> --structure before any cat <file> --page N[-M] for
+that file. Use grep <query> <file> only as a single-document lexical fallback.
+Do not use find, recursive grep, folder grep, pipes, stat schema/field modes,
+browse spaces, implicit cat reads, or general knowledge when workspace evidence
+is not found.
 """
 
 AGENT_TOOL_POLICY = """
 Tool policy:
 - The bash tool is a PageIndex virtual shell, not an operating-system shell.
 - The default agent tool surface is read-only.
-- Use only commands listed in the workspace capabilities.
+- Use only tree, browse, stat, cat, grep, and ls as an alias for tree -L 1.
 - Folder paths such as /documents are positional command targets; never put folder paths in --where.
-- Use --where only with metadata fields shown by stat --schema.
-- Start with ls or tree to understand workspace and folder structure before semantic file retrieval.
-- After choosing a folder, use browse <folder> "<query>" for relevance-ranked file candidates; quote multi-word queries, for example browse /documents "Federal Reserve".
-- If the relevant folder is uncertain, use browse -R <folder> "<query>" to search recursively from a structural parent folder.
-- browse returns file candidates only; Do not use browse as folder semantic recall.
+- Start with tree to understand workspace and folder structure before document retrieval.
+- After choosing a folder, use browse <folder> "<query>" for relevance-ranked document candidates; quote multi-word queries, for example browse /documents "Federal Reserve".
+- If browse misses: inspect sibling or child folders with tree, browse another plausible folder, rephrase the query and browse again, then use browse -R from a broader folder.
+- Only after that persistence protocol may you say the workspace lacks evidence.
+- browse uses summary retrieval only; do not use browse --space.
 - browse candidates are not final evidence. After selecting candidates, verify the relevant facts with cat or grep before making source-backed claims.
-- grep -R performs lexical evidence search.
-- Use grep <query> <path|file_ref|document_id> for a selected single file. Use grep -R only with folder targets; do not run grep -R against one file.
-- grep does not support regex alternation such as "a|b"; run separate grep commands or use browse for relevance-ranked file discovery.
-- Do not use find | grep as an exhaustive search or as proof that no document exists; find output can be scoped or limited. Use metadata filters, browse, grep on a narrowed target, or cat on likely candidates instead.
-- A single failed grep is not enough evidence to say there is no relevant document. If grep returns no matches for a workspace-topic question, verify with browse on a relevant folder or inspect likely document structure before answering no-evidence.
-- If the user asks for summary search, semantic search, vector search, or "用 summary 搜", use browse <folder> "<query>" with the default summary space; do not translate that request into find --where.
-- Tool errors are returned as ERROR text; recover by trying an available command.
+- Use grep <query> <path|file_ref|document_id> for a selected single file only.
+- Do not use find, recursive grep, folder grep, pipes, schema browsing, batch metadata commands, browse spaces, implicit cat reads, or general-knowledge fallback.
+- Command errors are JSON; recover by trying an available command.
 - Use cat or grep to gather evidence before making source-backed claims.
 - Do not reconstruct a file path from a title. Use exact paths returned by PIFS commands, or use file_ref/document_id when available; quote paths that contain spaces.
-- For broad topic, method, or "what solution" questions that are likely about the workspace, search for candidate documents before asking the user to choose a document.
-- Use stat only for metadata/schema/status questions or to resolve ambiguous target identity. Do not run stat merely to understand what a document says.
+- For broad topic, method, or "what solution" questions that are likely about the workspace, browse for candidate documents before asking the user to choose a document.
+- Use stat only for identity, metadata, or status questions. Do not run stat merely to understand what a document says.
 - Prefer target-first cat syntax with stable targets: cat <path> --structure, cat <path> --page 31-59.
 - cat <target> --structure returns the cached PageIndex structure JSON without text fields.
 - For PDF/PageIndex document Q&A, run cat <target> --structure before the first cat <target> --page call for that target; page reads without structure are blind page guessing.
 - cat <target> --page accepts at most 5 pages at once. If a larger range is needed, first inspect cat <target> --structure and then read a smaller page range.
 - When recovering from cat page/text limit errors, stop if the evidence is sufficient; if it is not sufficient, make another smaller call before answering.
-- cat <target> --all returns at most 100 text lines; use cat <target> --range <start>-<end> for the next page.
 - After cat <target> --structure identifies a relevant section/subsection, use cat <target> --page <start>-<end> for exact evidence.
 - Use cat <target> --page <start>-<end> when the user explicitly asks for pages/page ranges or when you need exact page text to verify evidence.
 - Do not guess cat --page ranges from grep line numbers, text offsets, or table-of-contents intuition; use cat <target> --structure to map the document first.
 - Avoid fetching a broad page span unless page-level citation or verification is required.
 - Do not call cat --page <target> <start> <end>; if you need a page span, use cat <target> --page <start>-<end>.
-- For metadata or summary-field questions, run stat --schema and stat <target> for relevant files before answering; do not infer metadata presence or absence from ls/find output alone.
+- For metadata or summary-field questions, run stat <target> for relevant files before answering.
 - Distinguish default/register metadata from caller-provided custom metadata when the evidence supports it.
 """
 
@@ -272,29 +242,13 @@ def build_agent_initial_context(
     *,
     root: str = "/",
     executor: PIFSCommandExecutor | None = None,
-    query_context: str | None = None,
 ) -> str:
-    executor = executor or PIFSCommandExecutor(
-        filesystem,
-        json_output=False,
-        query_context=query_context,
-    )
-    schema = filesystem._metadata_schema()
-    schema_fields = schema.get("fields", {})
-    schema_sample = dict(list(schema_fields.items())[:50])
+    executor = executor or PIFSCommandExecutor(filesystem)
     return "\n".join(
         [
             f"Root path: {root}",
-            "Top-level listing:",
-            executor.execute(f"ls {root}"),
-            "Metadata schema summary:",
-            json.dumps(
-                {
-                    "field_count": len(schema_fields),
-                    "sample_fields": schema_sample,
-                },
-                ensure_ascii=False,
-            ),
+            "Top-level tree:",
+            executor.execute(f"tree {root} -L 1"),
             "Workspace retrieval capabilities:",
             executor.describe_available_command_surfaces(),
         ]
@@ -307,13 +261,11 @@ def build_pifs_agent_instructions(
     root: str = "/",
     system_prompt: str | None = None,
     executor: PIFSCommandExecutor | None = None,
-    query_context: str | None = None,
 ) -> str:
     initial_context = build_agent_initial_context(
         filesystem,
         root=root,
         executor=executor,
-        query_context=query_context,
     )
     return "\n\n".join(
         [
@@ -544,7 +496,7 @@ class PIFSAgentSession:
             raise
 
         set_tracing_disabled(should_disable_pifs_agent_tracing())
-        self.executor = PIFSCommandExecutor(filesystem, json_output=False)
+        self.executor = PIFSCommandExecutor(filesystem)
         instructions = build_pifs_agent_instructions(
             filesystem,
             root=root,
@@ -586,7 +538,6 @@ class PIFSAgentSession:
         self.session = SQLiteSession("pifs-chat") if persist_conversation else None
 
     def run(self, question: str) -> str:
-        self.executor.query_context = extract_agent_question_text(question)
         self.observer = PIFSAgentStreamObserver(
             self.normalized_stream_mode,
             stream_log=self.agent_log,
@@ -630,14 +581,13 @@ class PIFSAgentSession:
 
     def _run_bash(self, command: str) -> str:
         started = time.time()
-        ok = True
         assert self.observer is not None
         self.observer.emit_tool_call(command, force=self.verbose)
+        output = self.executor.execute(command)
         try:
-            output = self.executor.execute(command)
-        except PIFSCommandError as exc:
+            ok = bool(json.loads(output).get("success"))
+        except json.JSONDecodeError:
             ok = False
-            output = f"ERROR: {exc}"
         seconds = time.time() - started
         if self.tool_log is not None:
             self.tool_log.append(
@@ -656,12 +606,3 @@ class PIFSAgentSession:
             force=self.verbose,
         )
         return output
-
-
-def extract_agent_question_text(prompt: str) -> str:
-    for line in str(prompt or "").splitlines():
-        if line.startswith("Question:"):
-            value = line.split(":", 1)[1].strip()
-            if value:
-                return value
-    return str(prompt or "").strip()

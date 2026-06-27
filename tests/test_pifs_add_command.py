@@ -90,10 +90,12 @@ def test_add_text_folder_target_copies_artifact_indexes_summary_and_is_readable(
     assert copied_path.read_text(encoding="utf-8") == "alpha filing text for pifs add"
     assert copied_path.resolve() != source.resolve()
 
-    executor = PIFSCommandExecutor(filesystem, json_output=True)
-    rendered = json.loads(executor.execute("cat /documents/reports/filing.txt --all"))
+    executor = PIFSCommandExecutor(filesystem)
+    rendered = json.loads(executor.execute("grep alpha /documents/reports/filing.txt"))
 
-    assert rendered["data"]["text"] == "alpha filing text for pifs add"
+    assert rendered["data"]["matches"] == [
+        {"line": 1, "text": "alpha filing text for pifs add"}
+    ]
     assert info["metadata"]["summary"].startswith("Summary for filing.txt")
     assert filesystem.summary_projection_indexer.index.info()["document_count"] == 1
 
@@ -111,9 +113,9 @@ def test_add_rejects_same_folder_same_basename_without_overwrite(tmp_path):
     with pytest.raises(FileExistsError, match="already exists"):
         filesystem.add_file(source, "/documents")
 
-    executor = PIFSCommandExecutor(filesystem, json_output=True)
-    rendered = json.loads(executor.execute("cat /documents/conflict.txt --all"))
-    assert rendered["data"]["text"] == "first body"
+    executor = PIFSCommandExecutor(filesystem)
+    rendered = json.loads(executor.execute("grep first /documents/conflict.txt"))
+    assert rendered["data"]["matches"] == [{"line": 1, "text": "first body"}]
 
 
 def test_add_rejects_unsupported_type_before_registration(tmp_path):
@@ -204,11 +206,11 @@ def test_add_markdown_builds_pageindex_tree_from_copied_artifact(tmp_path, monke
     filesystem = make_filesystem(tmp_path / "workspace")
 
     info = filesystem.add_file(source, "/documents")
-    executor = PIFSCommandExecutor(filesystem, json_output=True)
+    executor = PIFSCommandExecutor(filesystem)
     structure = json.loads(executor.execute("cat /documents/notes.md --structure"))
     entry = filesystem.store.get_file(info["file_ref"])
 
-    assert structure["data"]["available"] is True
+    assert structure["data"]["document"]["available"] is True
     assert structure["data"]["structure"][0]["title"] == "Notes"
     assert indexed_paths == [Path(entry.storage_uri.removeprefix("file://"))]
     assert indexed_paths[0].resolve() != source.resolve()

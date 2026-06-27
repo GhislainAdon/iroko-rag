@@ -268,13 +268,17 @@ def _run_passthrough(
     command_tokens: list[str],
     *,
     workspace: str,
-    json_output: bool,
 ) -> int:
     filesystem = _filesystem_from_workspace(workspace)
-    executor = PIFSCommandExecutor(filesystem, json_output=json_output)
+    executor = PIFSCommandExecutor(filesystem)
     command = " ".join(shlex.quote(token) for token in command_tokens)
-    print(executor.execute(command))
-    return 0
+    output = executor.execute(command)
+    print(output)
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError:
+        return 0
+    return 0 if payload.get("success") is not False else 2
 
 
 def _run_add(argv: list[str], *, workspace: str) -> int:
@@ -319,14 +323,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PageIndex FileSystem CLI")
     parser.add_argument("--workspace", default=None)
     parser.add_argument("--env-file", default=None)
-    parser.add_argument("--json", action="store_true", dest="json_output")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     _load_env_file(args.env_file, workspace=args.workspace)
     args.workspace = _resolve_workspace(args.workspace)
 
     command_tokens = [token for token in args.command if token != "--"]
-    json_output = args.json_output
 
     if not command_tokens:
         parser.error("a filesystem command is required")
@@ -345,15 +347,11 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error("--workspace is required unless PIFS_WORKSPACE is set or `pifs set workspace <path>` has been run")
             return _run_add(command_args, workspace=args.workspace)
 
-        if "--json" in command_tokens:
-            command_tokens = [token for token in command_tokens if token != "--json"]
-            json_output = True
         if not args.workspace:
             parser.error("--workspace is required unless PIFS_WORKSPACE is set or `pifs set workspace <path>` has been run")
         return _run_passthrough(
             command_tokens,
             workspace=args.workspace,
-            json_output=json_output,
         )
     except PIFSCommandError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

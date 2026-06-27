@@ -184,7 +184,7 @@ def test_summary_projection_default_rejects_existing_256_index_for_writes(tmp_pa
     from pageindex.filesystem.semantic_projection import SummaryProjectionIndexer
 
     index_dir = tmp_path / "projection"
-    index = SQLiteVecSemanticIndex(index_dir / "summary_only_vector.sqlite")
+    index = SQLiteVecSemanticIndex(index_dir / "summary.sqlite")
     index.reset(
         dimension=256,
         metadata={
@@ -213,7 +213,7 @@ def test_summary_projection_from_provider_rejects_dimension_mismatch_before_embe
     from pageindex.filesystem.semantic_projection import SummaryProjectionIndexer
 
     index_dir = tmp_path / "projection"
-    index = SQLiteVecSemanticIndex(index_dir / "summary_only_vector.sqlite")
+    index = SQLiteVecSemanticIndex(index_dir / "summary.sqlite")
     index.reset(
         dimension=256,
         metadata={
@@ -350,7 +350,7 @@ def test_summary_projection_dimension_mismatch_preserves_existing_index(tmp_path
     from pageindex.filesystem.semantic_projection import SummaryProjectionIndexer
 
     index_dir = tmp_path / "projection"
-    index = SQLiteVecSemanticIndex(index_dir / "summary_only_vector.sqlite")
+    index = SQLiteVecSemanticIndex(index_dir / "summary.sqlite")
     index.reset(
         dimension=3,
         metadata={

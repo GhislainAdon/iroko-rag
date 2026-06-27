@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 
-GENERATED_METADATA_FIELDS = ("summary", "doc_type", "domain", "topic", "entity", "relation")
+GENERATED_METADATA_FIELDS = ("summary", "doc_type", "domain", "topic")
 
 
 class MetadataGenerationError(RuntimeError):
@@ -136,8 +136,6 @@ class MetadataGenerator:
         properties: dict[str, Any] = {}
         for field in fields:
             if field in {"summary", "doc_type", "domain", "topic"}:
-                properties[field] = {"type": "string"}
-            elif field in {"entity", "relation"}:
                 properties[field] = {"type": "string"}
             else:
                 raise MetadataGenerationError(

@@ -34,8 +34,6 @@ DEFAULT_METADATA_GENERATION_FIELDS = {
     "doc_type": True,
     "domain": True,
     "topic": True,
-    "entity": False,
-    "relation": False,
 }
 
 DEFAULT_METADATA_FIELD_TYPES = {
@@ -43,8 +41,6 @@ DEFAULT_METADATA_FIELD_TYPES = {
     "doc_type": "string",
     "domain": "string",
     "topic": "string",
-    "entity": "string",
-    "relation": "string",
 }
 
 METADATA_STATUSES = {
@@ -64,11 +60,9 @@ PROJECTION_INDEX_STATUSES = {
 }
 
 DEFAULT_EMBEDDING_DIMENSIONS = 1024
-SEMANTIC_RETRIEVAL_CHANNELS = ("summary", "entity", "relation")
+SEMANTIC_RETRIEVAL_CHANNELS = ("summary",)
 SEMANTIC_PROJECTION_INDEX_NAMES = {
-    "summary": "summary_only_vector",
-    "entity": "entity_vectors",
-    "relation": "relation_vectors",
+    "summary": "summary",
 }
 PAGEINDEX_DOCUMENT_SUFFIXES = {".pdf", ".md", ".markdown"}
 PAGEINDEX_DOCUMENT_CONTENT_TYPES = {
@@ -795,18 +789,17 @@ class PageIndexFileSystem:
         return channel in self.semantic_retrieval_channels()
 
     def retrieval_capabilities(self) -> dict[str, Any]:
-        semantic_channels = self.semantic_retrieval_channels()
+        semantic_channels = ["summary"] if self.has_semantic_channel("summary") else []
         semantic_commands = ["browse"] if semantic_channels else []
         return {
             "lexical": {
-                "grep_recursive": True,
+                "grep_recursive": False,
                 "grep_recursive_semantic_prefilter": False,
-                "grep_recursive_guard": "bounded broad-folder notice",
-                "find_maxdepth": True,
+                "find_maxdepth": False,
             },
             "semantic": {
                 "backend_configured": self.semantic_retrieval_backend is not None,
-                "channels": list(semantic_channels),
+                "channels": semantic_channels,
                 "commands": semantic_commands,
             },
         }
@@ -930,7 +923,7 @@ class PageIndexFileSystem:
         raise ValueError(
             f"{command} is only supported for PDF/Markdown PageIndex files; "
             f"got title={entry.title!r}, content_type={entry.content_type!r}. "
-            "Use cat <path|file_ref|document_id> --all for txt/text files."
+            "Use grep <query> <file> for single-document lexical evidence."
         )
 
     @classmethod
@@ -1139,8 +1132,6 @@ class PageIndexFileSystem:
                 "doc_type": False,
                 "domain": False,
                 "topic": False,
-                "entity": False,
-                "relation": False,
             },
             "projection_indexes": {"summary": True},
             "batch": False,

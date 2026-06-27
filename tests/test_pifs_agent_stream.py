@@ -170,10 +170,15 @@ class PIFSAgentStreamTest(unittest.TestCase):
             normalize_agent_stream_mode("nope")
 
     def test_reasoning_settings_enable_effort_and_summary(self):
-        settings = build_agent_model_settings(
-            reasoning_effort="medium",
-            reasoning_summary="detailed",
-        )
+        try:
+            settings = build_agent_model_settings(
+                reasoning_effort="medium",
+                reasoning_summary="detailed",
+            )
+        except ModuleNotFoundError as exc:
+            if exc.name == "agents":
+                self.skipTest("agents package is not installed")
+            raise
 
         self.assertIsNotNone(settings)
         self.assertEqual(settings.reasoning.effort, "medium")
@@ -181,7 +186,12 @@ class PIFSAgentStreamTest(unittest.TestCase):
         self.assertEqual(settings.verbosity, "low")
 
     def test_reasoning_effort_defaults_to_visible_summary(self):
-        settings = build_agent_model_settings(reasoning_effort="low")
+        try:
+            settings = build_agent_model_settings(reasoning_effort="low")
+        except ModuleNotFoundError as exc:
+            if exc.name == "agents":
+                self.skipTest("agents package is not installed")
+            raise
 
         self.assertIsNotNone(settings)
         self.assertEqual(settings.reasoning.effort, "low")
@@ -220,41 +230,29 @@ class PIFSAgentStreamTest(unittest.TestCase):
 
     def test_prompt_tells_agent_to_use_structure_then_page(self):
         self.assertIn(
-            "cat <target> --structure returns the cached PageIndex structure JSON",
+            "run cat <target> --structure before the first cat <target> --page",
             AGENT_TOOL_POLICY,
         )
-        self.assertIn("exact page text", BASH_TOOL_DESCRIPTION)
-        self.assertIn("cat <path> --structure and cat <path> --page", BASH_TOOL_DESCRIPTION)
-        self.assertIn("stop if the evidence is sufficient", AGENT_TOOL_POLICY)
-        self.assertIn("continue with another chunk before answering", BASH_TOOL_DESCRIPTION)
-        self.assertIn("run cat <target> --structure before the first cat <target> --page", AGENT_TOOL_POLICY)
-        self.assertIn("Do not guess cat --page ranges from grep line numbers", AGENT_TOOL_POLICY)
-        self.assertIn("Do not use cat --page as the first inspection command", BASH_TOOL_DESCRIPTION)
-        self.assertIn("Do not reconstruct paths from", BASH_TOOL_DESCRIPTION)
-        self.assertIn("document titles", BASH_TOOL_DESCRIPTION)
-        self.assertIn("file_ref/document_id", AGENT_TOOL_POLICY)
+        self.assertIn("Use cat <file> --structure before any cat <file> --page", BASH_TOOL_DESCRIPTION)
+        self.assertIn("Use grep <query> <file> only as a single-document lexical fallback", BASH_TOOL_DESCRIPTION)
 
     def test_prompt_requires_stat_for_metadata_questions(self):
-        self.assertIn("stat --schema and stat <target>", AGENT_TOOL_POLICY)
-        self.assertIn("do not infer metadata presence or absence", AGENT_TOOL_POLICY)
-        self.assertIn("questions about metadata fields", BASH_TOOL_DESCRIPTION)
-        self.assertIn("Use stat only for metadata/schema/status questions", AGENT_TOOL_POLICY)
+        self.assertIn("Use stat only for identity, metadata, or status questions", AGENT_TOOL_POLICY)
         self.assertIn("Do not run stat merely to understand what a document says", AGENT_TOOL_POLICY)
-        self.assertIn("Do not use stat as a general content/topic discovery step", BASH_TOOL_DESCRIPTION)
+        self.assertIn("Use stat only for identity, status, or\nmetadata", BASH_TOOL_DESCRIPTION)
 
     def test_prompt_routes_topic_retrieval_through_browse_after_folder_exploration(self):
-        self.assertIn("Start with ls or tree", AGENT_TOOL_POLICY)
+        self.assertIn("Start with tree", AGENT_TOOL_POLICY)
         self.assertIn('browse <folder> "<query>"', AGENT_TOOL_POLICY)
-        self.assertIn('browse /documents "Federal Reserve"', BASH_TOOL_DESCRIPTION)
-        self.assertIn("If the relevant folder is uncertain", AGENT_TOOL_POLICY)
-        self.assertIn('browse -R <folder> "<query>"', AGENT_TOOL_POLICY)
-        self.assertIn("browse returns file candidates only", AGENT_TOOL_POLICY)
+        self.assertIn("Use browse -R only after", BASH_TOOL_DESCRIPTION)
+        self.assertIn("If browse misses", AGENT_TOOL_POLICY)
+        self.assertIn("browse -R from a broader folder", AGENT_TOOL_POLICY)
+        self.assertIn("browse candidates are not final evidence", AGENT_TOOL_POLICY)
         self.assertIn("verify the relevant facts with cat or grep", AGENT_TOOL_POLICY)
         self.assertIn("cat <target> --structure", AGENT_TOOL_POLICY)
         self.assertIn("cat <target> --page", AGENT_TOOL_POLICY)
-        self.assertIn("Do not use browse as folder semantic recall", AGENT_TOOL_POLICY)
         self.assertIn("Use grep <query> <path|file_ref|document_id> for a selected single file", AGENT_TOOL_POLICY)
-        self.assertIn("Use grep <query> <file> for one\nselected file", BASH_TOOL_DESCRIPTION)
+        self.assertIn("Use grep <query> <file> only as a single-document lexical fallback", BASH_TOOL_DESCRIPTION)
 
     def test_default_agent_prompts_do_not_suggest_legacy_semantic_commands(self):
         prompt_surface = "\n".join(
@@ -274,18 +272,18 @@ class PIFSAgentStreamTest(unittest.TestCase):
     def test_demo_prompt_uses_browse_strategy_and_not_old_vector_commands(self):
         demo_prompt = load_demo_agent_prompt()
 
-        self.assertIn("Start with ls or tree", demo_prompt)
+        self.assertIn("Start with tree", demo_prompt)
         self.assertIn('browse /documents "Federal Reserve supervision regulation"', demo_prompt)
         self.assertIn('browse -R /documents "Federal Reserve supervision regulation"', demo_prompt)
         self.assertIn("verify", demo_prompt)
         self.assertIn("cat <path> --structure", demo_prompt)
-        self.assertIn("Use grep <query> <file> for one selected file", demo_prompt)
+        self.assertIn("Use grep <query> <file> only for one selected file", demo_prompt)
         self.assertIn("Do not guess cat --page ranges from grep line numbers", demo_prompt)
         self.assertNotIn("search-summary", demo_prompt)
 
     def test_prompt_rejects_find_grep_as_exhaustive_search(self):
-        self.assertIn("Do not use find | grep as an exhaustive search", AGENT_TOOL_POLICY)
-        self.assertIn("find output can be scoped or limited", AGENT_TOOL_POLICY)
+        self.assertIn("Do not use find, recursive grep, folder grep, pipes", AGENT_TOOL_POLICY)
+        self.assertIn("Only after that persistence protocol may you say the workspace lacks evidence", AGENT_TOOL_POLICY)
 
     def test_system_prompt_sets_workspace_identity_and_scope(self):
         self.assertIn("PageIndex FileSystem Demo Agent", AGENT_SYSTEM_PROMPT)
@@ -294,14 +292,13 @@ class PIFSAgentStreamTest(unittest.TestCase):
         self.assertIn("unrelated to the current workspace", AGENT_SYSTEM_PROMPT)
         self.assertIn("do not answer it as\na general-purpose assistant", AGENT_SYSTEM_PROMPT)
         self.assertIn("workspace-related topic question", AGENT_SYSTEM_PROMPT)
-        self.assertIn("clarify only after a reasonable search", AGENT_SYSTEM_PROMPT)
-        self.assertIn("search for candidate documents before asking", AGENT_TOOL_POLICY)
-        self.assertIn("Do not conclude that no relevant document exists from one failed grep", AGENT_SYSTEM_PROMPT)
-        self.assertIn("A single failed grep is not enough evidence", AGENT_TOOL_POLICY)
+        self.assertIn("clarify only after the persistence protocol", AGENT_SYSTEM_PROMPT)
+        self.assertIn("browse for candidate documents before asking", AGENT_TOOL_POLICY)
+        self.assertIn("Only after that persistence protocol may you say the workspace lacks evidence", AGENT_TOOL_POLICY)
 
     def test_threaded_runtime_error_is_not_retried_on_fresh_loop(self):
         session = object.__new__(PIFSAgentSession)
-        session.executor = SimpleNamespace(query_context=None)
+        session.executor = SimpleNamespace()
         session.normalized_stream_mode = "off"
         session.agent_log = []
         session.max_seconds = None

@@ -125,8 +125,8 @@ class MetadataQueryEngine:
             if field in self.FOLDER_SCOPE_FIELD_HINTS:
                 raise MetadataQueryError(
                     f"Unknown metadata field: {field}. Folder paths are positional PIFS paths, "
-                    "not metadata fields; use `ls /documents` or `find /documents -type f`. "
-                    "Use --where only with fields from `stat --schema`."
+                    "not metadata fields; use `tree /documents` to inspect folders, then "
+                    '`browse /documents "<query>" --where JSON` for metadata pruning.'
                 )
             raise MetadataQueryError(f"Unknown metadata field: {field}")
 
