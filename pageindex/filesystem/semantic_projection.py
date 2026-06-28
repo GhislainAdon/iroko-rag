@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import struct
 import time
@@ -77,6 +76,8 @@ class SemanticProjectionSearchBackend:
         embedding_model: str = "text-embedding-3-small",
         embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_timeout: float = 60,
+        embedding_api_key: str | None = None,
+        embedding_base_url: str | None = None,
         **kwargs: Any,
     ) -> "SemanticProjectionSearchBackend":
         return cls(
@@ -86,6 +87,8 @@ class SemanticProjectionSearchBackend:
                 embedding_model,
                 dimensions=embedding_dimensions,
                 timeout=embedding_timeout,
+                api_key=embedding_api_key,
+                base_url=embedding_base_url,
             ),
             embedding_provider=embedding_provider,
             embedding_model=embedding_model,
@@ -203,6 +206,8 @@ class SummaryProjectionIndexer:
         embedding_model: str = "text-embedding-3-small",
         embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_timeout: float = 60,
+        embedding_api_key: str | None = None,
+        embedding_base_url: str | None = None,
         **kwargs: Any,
     ) -> "SummaryProjectionIndexer":
         cls._validate_existing_index_dimension(index_dir, embedding_dimensions)
@@ -213,6 +218,8 @@ class SummaryProjectionIndexer:
                 embedding_model,
                 dimensions=embedding_dimensions,
                 timeout=embedding_timeout,
+                api_key=embedding_api_key,
+                base_url=embedding_base_url,
             ),
             embedding_provider=embedding_provider,
             embedding_model=embedding_model,
@@ -416,7 +423,16 @@ class EmbeddingCache:
 
 
 class EmbeddingClient:
-    def __init__(self, *, provider: str, model: str, dimensions: int, timeout: float):
+    def __init__(
+        self,
+        *,
+        provider: str,
+        model: str,
+        dimensions: int,
+        timeout: float,
+        api_key: str | None = None,
+        base_url: str | None = None,
+    ):
         self.provider = provider.lower()
         self.model = model
         self.dimensions = dimensions
@@ -424,13 +440,13 @@ class EmbeddingClient:
             raise ValueError(f"unknown embedding provider: {provider}")
         from openai import OpenAI
 
-        api_key = os.environ.get("PIFS_EMBEDDING_API_KEY") or os.environ.get("OPENAI_API_KEY")
-        base_url = os.environ.get("PIFS_EMBEDDING_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
         if not api_key:
-            raise ValueError(
-                "PIFS_EMBEDDING_API_KEY or OPENAI_API_KEY is required for PIFS embeddings"
-            )
-        self.client = OpenAI(api_key=api_key, base_url=base_url or None, timeout=timeout)
+            raise ValueError("embedding_api_key is required for PIFS embeddings")
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=base_url or None,
+            timeout=timeout,
+        )
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         kwargs: dict[str, Any] = {"model": self.model, "input": texts}
@@ -440,12 +456,22 @@ class EmbeddingClient:
         return [list(item.embedding) for item in sorted(response.data, key=lambda item: item.index)]
 
 
-def make_embedder(provider: str, model: str, *, dimensions: int, timeout: float) -> Any:
+def make_embedder(
+    provider: str,
+    model: str,
+    *,
+    dimensions: int,
+    timeout: float,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> Any:
     return EmbeddingClient(
         provider=provider,
         model=model,
         dimensions=dimensions,
         timeout=timeout,
+        api_key=api_key,
+        base_url=base_url,
     )
 
 

@@ -70,6 +70,8 @@ class PageIndexFileSystem:
         summary_projection_embedding_model: str = "text-embedding-3-small",
         summary_projection_embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         summary_projection_embedding_timeout: float = 60,
+        summary_projection_embedding_api_key: str | None = None,
+        summary_projection_embedding_base_url: str | None = None,
     ):
         self.workspace = Path(workspace).expanduser()
         self.store = SQLiteFileSystemStore(self.workspace)
@@ -85,6 +87,8 @@ class PageIndexFileSystem:
         self.summary_projection_embedding_model = summary_projection_embedding_model
         self.summary_projection_embedding_dimensions = summary_projection_embedding_dimensions
         self.summary_projection_embedding_timeout = summary_projection_embedding_timeout
+        self.summary_projection_embedding_api_key = summary_projection_embedding_api_key
+        self.summary_projection_embedding_base_url = summary_projection_embedding_base_url
 
     def register_file(
         self,
@@ -242,6 +246,8 @@ class PageIndexFileSystem:
                 embedding_model=self.summary_projection_embedding_model,
                 embedding_dimensions=self.summary_projection_embedding_dimensions,
                 embedding_timeout=self.summary_projection_embedding_timeout,
+                embedding_api_key=self.summary_projection_embedding_api_key,
+                embedding_base_url=self.summary_projection_embedding_base_url,
             )
         if self.semantic_retrieval_backend is None:
             self.configure_semantic_projection_retrieval(
@@ -250,6 +256,8 @@ class PageIndexFileSystem:
                 embedding_model=self.summary_projection_embedding_model,
                 embedding_dimensions=self.summary_projection_embedding_dimensions,
                 embedding_timeout=self.summary_projection_embedding_timeout,
+                embedding_api_key=self.summary_projection_embedding_api_key,
+                embedding_base_url=self.summary_projection_embedding_base_url,
             )
 
     def _ensure_add_completion_defaults(self) -> None:
@@ -262,6 +270,8 @@ class PageIndexFileSystem:
                 embedding_model=self.summary_projection_embedding_model,
                 embedding_dimensions=self.summary_projection_embedding_dimensions,
                 embedding_timeout=self.summary_projection_embedding_timeout,
+                embedding_api_key=self.summary_projection_embedding_api_key,
+                embedding_base_url=self.summary_projection_embedding_base_url,
             )
 
     def _ensure_add_semantic_retrieval_ready(self) -> None:
@@ -293,6 +303,8 @@ class PageIndexFileSystem:
                     )
                 ),
                 embedding_timeout=self.summary_projection_embedding_timeout,
+                embedding_api_key=self.summary_projection_embedding_api_key,
+                embedding_base_url=self.summary_projection_embedding_base_url,
             )
         else:
             embedding_cache = getattr(indexer, "embedding_cache", None)
@@ -364,6 +376,8 @@ class PageIndexFileSystem:
             embedding_model=self.summary_projection_embedding_model,
             embedding_dimensions=self.summary_projection_embedding_dimensions,
             embedding_timeout=self.summary_projection_embedding_timeout,
+            embedding_api_key=self.summary_projection_embedding_api_key,
+            embedding_base_url=self.summary_projection_embedding_base_url,
         )
         return bool(self.semantic_retrieval_channels())
 
@@ -813,6 +827,8 @@ class PageIndexFileSystem:
         embedding_model: str = "text-embedding-3-small",
         embedding_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
         embedding_timeout: float = 60,
+        embedding_api_key: str | None = None,
+        embedding_base_url: str | None = None,
         fetch_multiplier: int = 100,
     ) -> Any:
         from .semantic_projection import SemanticProjectionSearchBackend
@@ -823,6 +839,8 @@ class PageIndexFileSystem:
             embedding_model=embedding_model,
             embedding_dimensions=embedding_dimensions,
             embedding_timeout=embedding_timeout,
+            embedding_api_key=embedding_api_key,
+            embedding_base_url=embedding_base_url,
             fetch_multiplier=fetch_multiplier,
         )
         return self.semantic_retrieval_backend

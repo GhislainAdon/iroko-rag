@@ -7,6 +7,35 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolate_pifs_config(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+
+
+def pifs_config_path(tmp_path):
+    return tmp_path / "xdg-config" / "pageindex" / "pifs.json"
+
+
+def test_pifs_config_file_overrides_default_location(monkeypatch, tmp_path):
+    from pageindex.filesystem import cli
+
+    default_path = pifs_config_path(tmp_path)
+    override_path = tmp_path / "custom-pifs.json"
+    default_path.parent.mkdir(parents=True, exist_ok=True)
+    default_path.write_text(
+        json.dumps({"workspace": str(tmp_path / "default-workspace")}),
+        encoding="utf-8",
+    )
+    override_path.write_text(
+        json.dumps({"workspace": str(tmp_path / "override-workspace")}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("PIFS_CONFIG_FILE", str(override_path))
+
+    assert cli._configured_workspace() == str(tmp_path / "override-workspace")
+
+
 class FakeFileSystem:
     def __init__(self, workspace):
         self.workspace = Path(workspace)
@@ -58,8 +87,9 @@ def test_cli_workspace_without_projection_index_does_not_require_sqlite_vec(
 def test_cli_workspace_uses_embedding_config(monkeypatch, tmp_path):
     from pageindex.filesystem import cli
 
-    config_path = tmp_path / "pifs.json"
+    config_path = pifs_config_path(tmp_path)
     workspace = tmp_path / "workspace"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         json.dumps(
             {
@@ -68,6 +98,8 @@ def test_cli_workspace_uses_embedding_config(monkeypatch, tmp_path):
                 "embedding_model": "gemini-embedding-2-preview",
                 "embedding_dimensions": 3072,
                 "embedding_timeout": 12.5,
+                "embedding_base_url": "https://example.invalid/openai/",
+                "embedding_api_key": "test-gemini-key",
             }
         ),
         encoding="utf-8",
@@ -78,7 +110,8 @@ def test_cli_workspace_uses_embedding_config(monkeypatch, tmp_path):
             self.workspace = Path(workspace)
             self.kwargs = kwargs
 
-    monkeypatch.setenv("PIFS_CONFIG_FILE", str(config_path))
+    monkeypatch.setenv("PIFS_EMBEDDING_API_KEY", "ignored-env-key")
+    monkeypatch.setenv("PIFS_EMBEDDING_BASE_URL", "https://ignored.invalid/")
     monkeypatch.setattr(cli, "PageIndexFileSystem", ConfiguredFileSystem)
 
     filesystem = cli._filesystem_from_workspace(str(workspace))
@@ -89,7 +122,11 @@ def test_cli_workspace_uses_embedding_config(monkeypatch, tmp_path):
         "summary_projection_embedding_model": "gemini-embedding-2-preview",
         "summary_projection_embedding_dimensions": 3072,
         "summary_projection_embedding_timeout": 12.5,
+        "summary_projection_embedding_base_url": "https://example.invalid/openai/",
+        "summary_projection_embedding_api_key": "test-gemini-key",
     }
+    assert os.environ["PIFS_EMBEDDING_API_KEY"] == "ignored-env-key"
+    assert os.environ["PIFS_EMBEDDING_BASE_URL"] == "https://ignored.invalid/"
 
 
 def test_browse_surfaces_projection_dimension_mismatch_lazily(tmp_path):
@@ -188,9 +225,8 @@ def test_cli_passthrough_returns_nonzero_for_failed_json_envelope(monkeypatch, c
 def test_cli_set_workspace_persists_default(monkeypatch, capsys, tmp_path):
     from pageindex.filesystem import cli
 
-    config_path = tmp_path / "pifs.json"
+    config_path = pifs_config_path(tmp_path)
     workspace = tmp_path / "workspace"
-    monkeypatch.setenv("PIFS_CONFIG_FILE", str(config_path))
 
     status = cli.main(["set", "workspace", str(workspace)])
 
@@ -269,10 +305,9 @@ def test_cli_setmeta_clear_uses_empty_object(monkeypatch, capsys, tmp_path):
 def test_cli_passthrough_uses_configured_workspace(monkeypatch, capsys, tmp_path):
     from pageindex.filesystem import cli
 
-    config_path = tmp_path / "pifs.json"
+    config_path = pifs_config_path(tmp_path)
     workspace = tmp_path / "workspace"
     executor_instances = []
-    monkeypatch.setenv("PIFS_CONFIG_FILE", str(config_path))
     monkeypatch.delenv("PIFS_WORKSPACE", raising=False)
 
     class FakeExecutor:

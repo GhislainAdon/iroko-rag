@@ -181,6 +181,8 @@ def _optional_float(name: str, value: str | None) -> float | None:
 def _filesystem_embedding_config() -> dict[str, object]:
     config_values = _read_config()
     config: dict[str, object] = {}
+    base_url = config_values.get("embedding_base_url")
+    api_key = config_values.get("embedding_api_key")
     provider = config_values.get("embedding_provider")
     model = config_values.get("embedding_model")
     dimensions = _optional_int(
@@ -199,6 +201,10 @@ def _filesystem_embedding_config() -> dict[str, object]:
         config["summary_projection_embedding_dimensions"] = dimensions
     if timeout is not None:
         config["summary_projection_embedding_timeout"] = timeout
+    if base_url and base_url.strip():
+        config["summary_projection_embedding_base_url"] = base_url.strip()
+    if api_key and api_key.strip():
+        config["summary_projection_embedding_api_key"] = api_key.strip()
     return config
 
 
