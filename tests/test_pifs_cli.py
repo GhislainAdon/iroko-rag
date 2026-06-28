@@ -55,6 +55,43 @@ def test_cli_workspace_without_projection_index_does_not_require_sqlite_vec(
     assert filesystem.semantic_retrieval_channels() == ()
 
 
+def test_cli_workspace_uses_embedding_config(monkeypatch, tmp_path):
+    from pageindex.filesystem import cli
+
+    config_path = tmp_path / "pifs.json"
+    workspace = tmp_path / "workspace"
+    config_path.write_text(
+        json.dumps(
+            {
+                "workspace": str(workspace),
+                "embedding_provider": "openai",
+                "embedding_model": "gemini-embedding-2-preview",
+                "embedding_dimensions": 3072,
+                "embedding_timeout": 12.5,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class ConfiguredFileSystem:
+        def __init__(self, workspace, **kwargs):
+            self.workspace = Path(workspace)
+            self.kwargs = kwargs
+
+    monkeypatch.setenv("PIFS_CONFIG_FILE", str(config_path))
+    monkeypatch.setattr(cli, "PageIndexFileSystem", ConfiguredFileSystem)
+
+    filesystem = cli._filesystem_from_workspace(str(workspace))
+
+    assert filesystem.workspace == workspace
+    assert filesystem.kwargs == {
+        "summary_projection_embedding_provider": "openai",
+        "summary_projection_embedding_model": "gemini-embedding-2-preview",
+        "summary_projection_embedding_dimensions": 3072,
+        "summary_projection_embedding_timeout": 12.5,
+    }
+
+
 def test_browse_surfaces_projection_dimension_mismatch_lazily(tmp_path):
     from pageindex.filesystem import cli
     from pageindex.filesystem.commands import PIFSCommandExecutor
@@ -454,6 +491,35 @@ def test_cli_ask_does_not_reprint_streamed_agent_output(monkeypatch, capsys, tmp
 
     assert status == 0
     assert capsys.readouterr().out == "streamed answer\n"
+
+
+def test_cli_ask_prints_final_answer_with_tool_stream(monkeypatch, capsys, tmp_path):
+    from pageindex.filesystem import cli
+
+    workspace = tmp_path / "workspace"
+
+    def fake_run_pifs_agent(filesystem, question, **kwargs):
+        print("[tool stream]")
+        return "FOUND 2 documents"
+
+    monkeypatch.setattr(cli, "PageIndexFileSystem", FakeFileSystem)
+    monkeypatch.setattr(cli, "run_pifs_agent", fake_run_pifs_agent)
+
+    status = cli.main(
+        [
+            "ask",
+            "--workspace",
+            str(workspace),
+            "--stream-mode",
+            "tools",
+            "What",
+            "is",
+            "inside?",
+        ]
+    )
+
+    assert status == 0
+    assert capsys.readouterr().out == "[tool stream]\nFOUND 2 documents\n"
 
 
 def test_cli_chat_stream_mode_can_be_overridden(monkeypatch, tmp_path):

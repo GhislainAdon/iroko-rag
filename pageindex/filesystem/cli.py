@@ -160,8 +160,53 @@ def _parse_agent_command(
     return args
 
 
+def _optional_int(name: str, value: str | None) -> int | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+
+
+def _optional_float(name: str, value: str | None) -> float | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number") from exc
+
+
+def _filesystem_embedding_config() -> dict[str, object]:
+    config_values = _read_config()
+    config: dict[str, object] = {}
+    provider = config_values.get("embedding_provider")
+    model = config_values.get("embedding_model")
+    dimensions = _optional_int(
+        "embedding_dimensions",
+        config_values.get("embedding_dimensions"),
+    )
+    timeout = _optional_float(
+        "embedding_timeout",
+        config_values.get("embedding_timeout"),
+    )
+    if provider and provider.strip():
+        config["summary_projection_embedding_provider"] = provider.strip()
+    if model and model.strip():
+        config["summary_projection_embedding_model"] = model.strip()
+    if dimensions is not None:
+        config["summary_projection_embedding_dimensions"] = dimensions
+    if timeout is not None:
+        config["summary_projection_embedding_timeout"] = timeout
+    return config
+
+
 def _filesystem_from_workspace(workspace: str) -> PageIndexFileSystem:
-    return PageIndexFileSystem(Path(workspace).expanduser())
+    return PageIndexFileSystem(
+        Path(workspace).expanduser(),
+        **_filesystem_embedding_config(),
+    )
 
 
 def _agent_kwargs(args: argparse.Namespace) -> dict[str, object]:
@@ -231,7 +276,7 @@ def _run_ask(argv: list[str], *, workspace_default: str | None) -> int:
 
     filesystem = _filesystem_from_workspace(args.workspace)
     answer = run_pifs_agent(filesystem, question, **_agent_kwargs(args))
-    if args.stream_mode == "off":
+    if args.stream_mode in {"off", "tools"}:
         print(answer)
     return 0
 
