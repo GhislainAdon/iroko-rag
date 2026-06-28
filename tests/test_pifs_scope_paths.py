@@ -101,8 +101,8 @@ class PIFSScopePathTest(unittest.TestCase):
             )
             self.assertTrue(browse["success"])
             self.assertEqual(
-                [item["document_id"] for item in browse["data"]["documents"]],
-                ["doc_aapl_2024"],
+                [item["path"] for item in browse["data"]["documents"]],
+                ["/documents/sec-filings/aapl-2024.md"],
             )
             self.assertEqual(browse["data"]["scope"]["path"], "/documents/@year/2024/@ticker/AAPL")
             self.assertEqual(browse["data"]["scope"]["folder_path"], "/documents")
@@ -375,12 +375,12 @@ class PIFSScopePathTest(unittest.TestCase):
             self.assertTrue(vendor["success"])
             self.assertTrue(year["success"])
             self.assertEqual(
-                [item["document_id"] for item in vendor["data"]["documents"]],
-                ["doc_contract"],
+                [item["path"] for item in vendor["data"]["documents"]],
+                ["/documents/contracts/apple-renewal.md"],
             )
             self.assertEqual(
-                [item["document_id"] for item in year["data"]["documents"]],
-                ["doc_contract"],
+                [item["path"] for item in year["data"]["documents"]],
+                ["/documents/contracts/apple-renewal.md"],
             )
             self.assertEqual(
                 vendor["data"]["scope"]["metadata_filter"],

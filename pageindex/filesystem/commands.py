@@ -342,17 +342,10 @@ class PIFSCommandExecutor:
 
     def _document_hit(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
-            "rank": row.get("rank"),
-            "similarity": row.get("similarity"),
             "path": row.get("path"),
-            "file_ref": row.get("file_ref"),
-            "document_id": row.get("external_id") or row.get("document_id"),
             "title": row.get("title"),
-            "folder_path": row.get("folder_path"),
-            "folder_paths": row.get("folder_paths", []),
             "summary": row.get("summary", ""),
             "metadata": row.get("metadata", {}),
-            "metadata_status": row.get("metadata_status", {}),
         }
 
     def _document_stat(self, target: str) -> dict[str, Any]:

@@ -154,8 +154,12 @@ class PIFSCoreAlignmentTest(unittest.TestCase):
             direct = _payload(executor.execute('browse /documents "alpha"'))
             self.assertTrue(direct["success"])
             self.assertEqual(
-                [doc["document_id"] for doc in direct["data"]["documents"]],
-                ["doc_direct"],
+                set(direct["data"]["documents"][0]),
+                {"path", "title", "summary", "metadata"},
+            )
+            self.assertEqual(
+                [doc["path"] for doc in direct["data"]["documents"]],
+                ["/documents/doc_direct.md"],
             )
             self.assertEqual(
                 direct["data"]["scope"],
@@ -171,8 +175,8 @@ class PIFSCoreAlignmentTest(unittest.TestCase):
 
             recursive = _payload(executor.execute('browse -R /documents "alpha"'))
             self.assertEqual(
-                [doc["document_id"] for doc in recursive["data"]["documents"]],
-                ["doc_deep", "doc_direct"],
+                [doc["path"] for doc in recursive["data"]["documents"]],
+                ["/documents/reports/doc_deep.md", "/documents/doc_direct.md"],
             )
             self.assertTrue(recursive["data"]["scope"]["recursive"])
 
