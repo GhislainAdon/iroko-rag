@@ -123,7 +123,7 @@ class PIFSCoreAlignmentTest(unittest.TestCase):
             )
             self.assertEqual(ls_result["data"]["depth"], 1)
 
-    def test_tree_defaults_to_chat_aligned_depth_ten(self):
+    def test_tree_defaults_to_chat_aligned_depth_ten_without_clamping_explicit_depth(self):
         from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -133,12 +133,12 @@ class PIFSCoreAlignmentTest(unittest.TestCase):
             executor = PIFSCommandExecutor(filesystem)
 
             default_tree = _payload(executor.execute("tree /documents"))
-            clamped_tree = _payload(executor.execute("tree /documents -L 99"))
+            explicit_tree = _payload(executor.execute("tree /documents -L 99"))
 
             self.assertTrue(default_tree["success"])
             self.assertEqual(default_tree["data"]["depth"], 10)
-            self.assertTrue(clamped_tree["success"])
-            self.assertEqual(clamped_tree["data"]["depth"], 10)
+            self.assertTrue(explicit_tree["success"])
+            self.assertEqual(explicit_tree["data"]["depth"], 99)
 
     def test_browse_summary_scoped_and_paginated(self):
         from pageindex.filesystem import PIFSCommandExecutor, PageIndexFileSystem

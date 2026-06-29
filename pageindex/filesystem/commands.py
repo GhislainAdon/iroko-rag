@@ -18,7 +18,6 @@ class PIFSCommandExecutor:
     FORBIDDEN_TOKENS = {"|", ">", "<", ">>", "<<", "&"}
     BROWSE_PAGE_SIZE = 10
     TREE_VALUE_PAGE_SIZE = 50
-    MAX_TREE_DEPTH = 10
     MAX_TREE_FOLDERS = 200
     MAX_GREP_MATCHES = 20
     MAX_PAGE_SPAN = 5
@@ -95,7 +94,6 @@ class PIFSCommandExecutor:
             else:
                 path = arg
             i += 1
-        depth = min(depth, self.MAX_TREE_DEPTH)
         scope = self.filesystem.resolve_query_scope(path)
         if scope.metadata_axis is not None:
             rows, has_more = self.filesystem.scope_metadata_values(
