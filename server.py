@@ -31,6 +31,8 @@ from pageindex.utils import extract_json, llm_completion
 WORKSPACE = os.getenv('IROKO_WORKSPACE', './results/workspace')
 MODEL = os.getenv('MODEL') or None  # None -> pageindex/config.yaml default
 OCR_LANG = os.getenv('OCR_LANG', 'eng')
+# Cap the answer context so small local models don't overflow their window.
+CONTEXT_MAX_CHARS = int(os.getenv('CONTEXT_MAX_CHARS', '40000'))
 
 app = FastAPI(title='iroko-rag', docs_url='/api/docs', openapi_url='/api/openapi.json')
 app.add_middleware(CORSMiddleware, allow_origins=['*'],
@@ -200,13 +202,20 @@ def chat(req: ChatRequest):
     selected = [n for n in _walk_nodes(doc.get('structure'))
                 if str(n.get('node_id')) in node_ids]
     if not selected:
-        return {'answer': "Je n'ai trouvé aucune section pertinente pour cette "
-                          "question dans le document. / No relevant section found.",
+        # Small models sometimes return an empty node list even when the
+        # document is relevant (single-node docs especially). Answer from
+        # the whole tree rather than refusing.
+        selected = list(_walk_nodes(doc.get('structure')))
+    if not selected:
+        return {'answer': 'Ce document ne contient aucun contenu indexé. / '
+                          'This document has no indexed content.',
                 'sources': []}
 
     # Step 2 — answer from the selected nodes' content only.
     context = '\n\n'.join(
         f"[{n.get('title', '?')}]\n{_node_context(doc, n)}" for n in selected)
+    if len(context) > CONTEXT_MAX_CHARS:
+        context = context[:CONTEXT_MAX_CHARS] + '\n[... truncated ...]'
     answer = llm_completion(client.model, ANSWER_PROMPT.format(
         question=req.question, context=context))
 
