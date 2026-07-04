@@ -52,6 +52,10 @@ PDF), pick it in the list, and ask me anything about it. No RAG code required.</
 </footer>
 
 <script>
+// Served by server.py -> same-origin relative calls. Opened as a local
+// file or in an editor preview -> relative URLs cannot resolve, so fall
+// back to the default API address (CORS is open server-side).
+const API = location.protocol.startsWith('http') ? '' : 'http://localhost:8000';
 const $ = id => document.getElementById(id);
 const messages = $('messages');
 
@@ -72,7 +76,7 @@ function add(cls, text, sources) {
 }
 
 async function refreshDocs(selectId) {
-  const docs = await (await fetch('/api/documents')).json();
+  const docs = await (await fetch(API + '/api/documents')).json();
   $('docs').innerHTML = '<option value="">— no document —</option>' + docs.map(d =>
     `<option value="${d.doc_id}">${d.doc_name || d.doc_id} (${d.type})</option>`).join('');
   if (selectId) $('docs').value = selectId;
@@ -87,7 +91,7 @@ $('file').onchange = async () => {
   const body = new FormData();
   body.append('file', f);
   try {
-    const r = await fetch('/api/documents', { method: 'POST', body });
+    const r = await fetch(API + '/api/documents', { method: 'POST', body });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || r.statusText);
     await refreshDocs(d.doc_id);
@@ -110,7 +114,7 @@ $('ask').onsubmit = async e => {
   $('send').disabled = true;
   const thinking = add('bot', '…');
   try {
-    const r = await fetch('/api/chat', {
+    const r = await fetch(API + '/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ doc_id, question })
