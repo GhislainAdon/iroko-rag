@@ -1,311 +1,113 @@
 <div align="center">
-  
-<a href="https://vectify.ai/pageindex" target="_blank">
-  <img src="https://github.com/user-attachments/assets/46201e72-675b-43bc-bfbd-081cc6b65a1d" alt="PageIndex Banner" />
-</a>
 
-<br/>
-<br/>
+# 🌳 iroko-rag
 
-<p align="center">
-  <a href="https://trendshift.io/repositories/14736" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14736" alt="VectifyAI%2FPageIndex | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-</p>
+**Chat with any document — vectorless, reasoning-based RAG, ready to use.**
 
-# PageIndex: Vectorless, Reasoning-based RAG
+*Named after the iroko, the sacred great tree of West Africa: a fitting home for a tree-index RAG.*
 
-<p align="center"><b>Reasoning-based RAG&nbsp; ◦ &nbsp;No Vector DB, No Chunking&nbsp; ◦ &nbsp;Context-Aware Retrieval&nbsp; ◦ &nbsp;Reads Like a Human</b></p>
+Fork of [VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex) that adds universal document ingestion (Office, scanned PDFs, plain text), a web chat UI + HTTP API, Docker packaging, local models via Ollama / llama.cpp, and fixes for several verified upstream bugs.
 
-<h4 align="center">
-  <a href="https://vectify.ai">🌐 Website</a>&nbsp; • &nbsp;
-  <a href="https://chat.pageindex.ai">🖥️ Chat Platform</a>&nbsp; • &nbsp;
-  <a href="https://pageindex.ai/developer">🔌 MCP & API</a>&nbsp; • &nbsp;
-  <a href="https://docs.pageindex.ai">📖 Docs</a>&nbsp; • &nbsp;
-  <a href="https://discord.com/invite/VuXuf29EUj">💬 Discord</a>&nbsp; • &nbsp;
-  <a href="https://ii2abc2jejf.typeform.com/to/tK3AXl8T">✉️ Contact</a>&nbsp;
-</h4>
-  
-</div>
-
-
-<details open>
-<summary><h2>📢 Updates</h2></summary>
-
-- 🔥 [**Agentic Vectorless RAG**](https://github.com/VectifyAI/PageIndex/blob/main/examples/agentic_vectorless_rag_demo.py) — A simple agentic, vectorless RAG [example](#-agentic-vectorless-rag-an-example) with *self-hosted PageIndex*, using OpenAI Agents SDK.
-- [**Scale PageIndex to Millions of Documents**](https://pageindex.ai/blog/pageindex-filesystem) — *PageIndex File System* is a file-level tree indexing layer that lets PageIndex reason over an entire corpus, not just a single document, enabling massive-scale document search.
-- [PageIndex Chat](https://chat.pageindex.ai) — Human-like document analysis agent [platform](https://chat.pageindex.ai) for professional long documents. Also available via [MCP](https://pageindex.ai/developer) or [API](https://pageindex.ai/developer).
-- [PageIndex Framework](https://pageindex.ai/blog/pageindex-intro) — Deep dive into PageIndex: an *agentic, in-context tree index* that enables LLMs to perform *reasoning-based, context-aware retrieval* over long documents.
-
- <!-- **🧪 Cookbooks:**
-- [Vectorless RAG](https://docs.pageindex.ai/cookbook/vectorless-rag-pageindex): A minimal, hands-on example of reasoning-based RAG using PageIndex. No vectors, no chunking, and human-like retrieval.
-- [Vision-based Vectorless RAG](https://docs.pageindex.ai/cookbook/vision-rag-pageindex): OCR-free, vision-only RAG with PageIndex's reasoning-native retrieval workflow that works directly over PDF page images. -->
-
-</details>
-
----
-
-# 📑 Introduction to PageIndex
-
-Are you frustrated with vector database retrieval accuracy for long professional documents? Traditional vector-based RAG relies on semantic *similarity* rather than true *relevance*. But **similarity ≠ relevance** — what we truly need in retrieval is **relevance**, and that requires **reasoning**. When working with professional documents that demand *contextual understanding*, domain expertise, and multi-step reasoning, similarity search often falls short — missing what's relevant but not similar, and returning what's similar yet not relevant.
-
-Inspired by AlphaGo, we propose **[PageIndex](https://vectify.ai/pageindex)** — a **vectorless**, **reasoning-based RAG** system that builds a **hierarchical tree index** from long documents, and uses LLMs to **reason** *over that index* for **agentic, context-aware retrieval**. The retrieval is *traceable* and *explainable*, with no vector DBs or chunking.
-PageIndex simulates how *human experts* navigate and extract knowledge from complex documents through *tree search*, enabling LLMs to *think* and *reason* their way to the most relevant document sections. It performs retrieval in two steps:
-
-1. Generate a “Table-of-Contents” **tree structure index** of documents
-2. Perform (agentic) reasoning-based retrieval through **tree search**
-
-<div align="center">
-  <a href="https://pageindex.ai/blog/pageindex-intro" target="_blank" title="The PageIndex Framework">
-    <img src="https://docs.pageindex.ai/images/cookbook/vectorless-rag.png" width="70%">
-  </a>
-</div>
-
-### 🎯 Core Features
-
-> PageIndex is a vectorless, reasoning-based RAG engine that mirrors how humans read, delivering traceable, explainable, and context-aware retrieval, without vector databases or chunking.
-
-Compared to traditional vector-based RAG, **PageIndex** features:
-- **No Vector DB**: Uses document structure and LLM reasoning for retrieval, instead of vector similarity search.
-- **No Chunking**: Documents are organized into natural sections, not artificial chunks.
-- **Better Traceability & Explainability**: Retrieval is reasoning-driven and grounded in explicit page and section references, making every result traceable and interpretable — no more “vibe retrieval” with opaque, approximate vector search.
-- **Context-Aware Retrieval**: Retrieval depends on your full context (e.g., conversation history and domain knowledge), and easily incorporates new context.
-- **Human-like Retrieval**: Mirrors how human experts navigate and extract knowledge from complex documents.
-
-PageIndex achieved **state-of-the-art** [98.7% accuracy](https://github.com/VectifyAI/Mafin2.5-FinanceBench) on FinanceBench (financial document QA benchmark), vastly outperforming vector RAG solutions on professional document analysis ([blog post](https://vectify.ai/blog/Mafin2.5)).
-
-### 📍 Explore PageIndex
-
-To learn more, please see a detailed introduction to the [PageIndex framework](https://pageindex.ai/blog/pageindex-intro). Check out [our GitHub](https://docs.pageindex.ai/open-source) for open-source code, and the [cookbooks](https://docs.pageindex.ai/cookbook), [tutorials](https://docs.pageindex.ai/tutorials), and [blog](https://pageindex.ai/blog) for more usage guides and examples.
-
-The PageIndex service is available as a ChatGPT-style [chat platform](https://chat.pageindex.ai), or can be integrated via [MCP](https://pageindex.ai/developer) or [API](https://pageindex.ai/developer), with [enterprise](https://pageindex.ai/enterprise) deployment available.
-
-### 🛠️ Deployment Options
-- **Self-host** — run locally with this open-source repo (using standard PDF parsing).
-- **Cloud Service** — production-grade pipeline with enhanced OCR, tree building, and retrieval for best results. Try instantly on our [Chat Platform](https://chat.pageindex.ai/), or integrate via [MCP](https://pageindex.ai/developer) or [API](https://pageindex.ai/developer).
-- **Enterprise** — dedicated or private deployment (VPC, on-prem). [Contact us](https://ii2abc2jejf.typeform.com/to/gVv7qkaN) or [book a demo](https://calendly.com/pageindex/meet) to learn more.
-
-### 🧪 Quick Hands-on
-
-- 🔥 [**Agentic Vectorless RAG**](examples/agentic_vectorless_rag_demo.py) *(latest)* — a simple but complete **agentic vectorless RAG** [example](#-agentic-vectorless-rag-an-example) with *self-hosted* PageIndex, using OpenAI Agents SDK.
-- Try the [Vectorless RAG](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb) notebook — a *minimal*, hands-on example of reasoning-based RAG using PageIndex.
-- Check out [Vision-based Vectorless RAG](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb) — no OCR; a minimal, vision-based & reasoning-native RAG pipeline that works directly over page images.
-  
-<div align="center">
-  <a href="https://github.com/VectifyAI/PageIndex/blob/main/examples/agentic_vectorless_rag_demo.py" target="_blank" rel="noopener">
-    <img src="https://img.shields.io/badge/View_on_GitHub-Agentic_Vectorless_RAG-blue?style=for-the-badge&logo=github" alt="View on GitHub: Agentic Vectorless RAG" />
-  </a>
-  <br/>
-  <a href="https://colab.research.google.com/github/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb" target="_blank" rel="noopener">
-    <img src="https://img.shields.io/badge/Open_In_Colab-Vectorless_RAG-orange?style=for-the-badge&logo=googlecolab" alt="Open in Colab: Vectorless RAG" />
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://colab.research.google.com/github/VectifyAI/PageIndex/blob/main/cookbook/vision_RAG_pageindex.ipynb" target="_blank" rel="noopener">
-    <img src="https://img.shields.io/badge/Open_In_Colab-Vision_RAG-orange?style=for-the-badge&logo=googlecolab" alt="Open in Colab: Vision RAG" />
-  </a>
 </div>
 
 ---
 
-# 🌲 PageIndex Tree Structure
+## ✨ Features
 
-PageIndex can transform lengthy PDF documents into a semantic **tree structure**, similar to a _“table of contents”_ but optimized for use with LLMs and AI agents. It's ideal for: financial reports, legal documents, regulatory filings, technical manuals, medical literature, academic textbooks, and any long, complex professional documents.
-
-Below is an example PageIndex tree structure. Also see more example [documents](https://github.com/VectifyAI/PageIndex/tree/main/examples/documents) and generated [tree structures](https://github.com/VectifyAI/PageIndex/tree/main/examples/documents/results).
-
-```jsonc
-...
-{
-  "title": "Financial Stability",
-  "node_id": "0006",
-  "start_index": 21,
-  "end_index": 22,
-  "summary": "The Federal Reserve ...",
-  "nodes": [
-    {
-      "title": "Monitoring Financial Vulnerabilities",
-      "node_id": "0007",
-      "start_index": 22,
-      "end_index": 28,
-      "summary": "The Federal Reserve's monitoring ..."
-    },
-    {
-      "title": "Domestic and International Cooperation and Coordination",
-      "node_id": "0008",
-      "start_index": 28,
-      "end_index": 31,
-      "summary": "In 2023, the Federal Reserve collaborated ..."
-    }
-  ]
-}
-...
-```
-
-You can generate PageIndex tree structures with this open-source repo. Or use our [API](https://pageindex.ai/developer) for higher-quality results powered by our enhanced OCR and tree building pipeline.
-
----
-
-# ⚙️ Package Usage
-
-> **Note:** This package uses standard PDF parsing. For use cases with complex PDFs, our [cloud service](https://pageindex.ai/developer) (via MCP and API) offers enhanced OCR, tree building, and retrieval.
-
-You can follow these steps to generate a PageIndex tree from a PDF document.
-
-### 1. Install dependencies
-
-```bash
-pip3 install --upgrade -r requirements.txt
-```
-
-### 2. Set your LLM API key
-
-Create a `.env` file in the root directory with your LLM API key. Multi-LLM is supported via [LiteLLM](https://docs.litellm.ai/docs/providers):
-
-```bash
-OPENAI_API_KEY=your_openai_key_here
-```
-
-### 3. Generate PageIndex structure for your PDF
-
-```bash
-python3 run_pageindex.py --pdf_path /path/to/your/document.pdf
-```
-
-<details>
-<summary>Optional parameters</summary>
-<br>
-You can customize the processing with additional optional arguments:
-
-```
---model                 LLM model to use (default: gpt-4o-2024-11-20)
---toc-check-pages       Pages to check for table of contents (default: 20)
---max-pages-per-node    Max pages per node (default: 10)
---max-tokens-per-node   Max tokens per node (default: 20000)
---if-add-node-id        Add node ID (yes/no, default: yes)
---if-add-node-summary   Add node summary (yes/no, default: yes)
---if-add-doc-description Add doc description (yes/no, default: yes)
-```
-</details>
-
-<details>
-<summary>Markdown support</summary>
-<br>
-We also provide markdown support for PageIndex. You can use the `--md_path` flag to generate a tree structure for a markdown file.
-
-```bash
-python3 run_pageindex.py --md_path /path/to/your/document.md
-```
-
-> Note: in this mode, we use "#" to determine node headings and their levels. For example, "##" is level 2, "###" is level 3, etc. Make sure your markdown file is formatted correctly. If your Markdown file was converted from a PDF or HTML, we don't recommend using this mode, since most existing conversion tools cannot preserve the original hierarchy. Instead, use our [PageIndex OCR](https://pageindex.ai/blog/ocr), which is designed to preserve it, to convert the PDF to a markdown file and then use this mode.
-</details>
-
-## 📥 Universal Ingestion (iroko-rag fork)
-
-**iroko-rag** — named after the iroko, the sacred great tree of West Africa: a fitting home for a tree-index RAG. This fork adds [`ingest.py`](ingest.py): one entry point for **any** document format, including scanned PDFs.
-
-| Input | Route |
+| | |
 |---|---|
-| PDF with text layer | Native PageIndex pipeline (unchanged) |
-| Scanned PDF (no text layer) | OCR: `ocrmypdf` if installed (keeps page numbers), else Tesseract → Markdown |
-| `.docx` `.odt` `.rtf` `.epub` `.html` `.tex` `.rst` `.org` | Pandoc → Markdown (heading styles become `#`/`##`) |
-| `.pptx` `.xlsx` `.csv` `.msg` and anything else | MarkItDown → Markdown |
-| `.md` | Native Markdown pipeline (unchanged) |
+| 🌲 **Vectorless RAG** | No embeddings, no vector DB. Documents become a semantic **tree** (like a smart table of contents); an LLM *reasons* its way to the right sections. From upstream PageIndex. |
+| 📥 **Universal ingestion** | PDF (native **and scanned** — Tesseract OCR), Word, PowerPoint, Excel, EPUB, HTML, plain `.txt` (structure recovered heuristically), Markdown… one command for any format. |
+| 💬 **Chat without coding** | Built-in web UI: upload → ask → sourced answers. Plus an open HTTP API for your Angular/React/anything frontend. |
+| 🦙 **Any LLM** | OpenAI/Anthropic/… (via LiteLLM), **Ollama** (with auto-pull of missing models), or any OpenAI-compatible server (llama.cpp, LM Studio, vLLM). |
+| 🐳 **Docker-ready** | One image with all system deps (Pandoc, Tesseract). `demo`, `web`, `test`, `ollama` compose services. |
+| 🔧 **Hardened** | 5 verified upstream bugs fixed with regression tests (36 tests), LLM call throttling, robust JSON parsing for small local models. |
+
+---
+
+## 🚀 Quick start (2 minutes)
 
 ```bash
-# System tools (install what you need):
-#   pandoc      https://pandoc.org  — office/text formats
-#   tesseract   OCR engine          — scanned PDFs
-#   ocrmypdf    (optional, better)  — pip3 install ocrmypdf
-pip3 install markitdown pytesseract pillow
-
-python3 ingest.py --input report.docx
-python3 ingest.py --input slides.pptx
-python3 ingest.py --input scanned.pdf --ocr-lang fra
-python3 ingest.py --input anything.docx --convert-only   # just emit Markdown, no LLM calls
+git clone https://github.com/GhislainAdon/iroko-rag.git
+cd iroko-rag
+cp env.example .env        # put your OPENAI_API_KEY — or set MODEL=ollama_chat/gemma4:e2b for 100% local
+docker compose up web
 ```
 
-If the converted Markdown contains no headings (e.g. a `.docx` without heading styles), the document is wrapped under a single root node so the pipeline still produces a usable tree.
+Open **http://localhost:8000** → upload a document → ask questions. That's it, no RAG code to write.
 
-## 🐳 Docker: ready-to-use demo
+> 100% local, no API key: install [Ollama](https://ollama.com), set `MODEL=ollama_chat/gemma4:e2b` in `.env` — if the model isn't downloaded yet, **the server pulls it automatically** at startup.
 
-Everything (Python deps + Pandoc + Tesseract eng/fra) ships in one image. Put your documents in `./data`, trees land in `./results`.
+---
+
+## 📖 Usage examples
+
+### 1. Web chat (no code)
 
 ```bash
-# One-shot demo on a bundled sample PDF (OpenAI):
-OPENAI_API_KEY=sk-... docker compose run --rm demo
-
-# Index your own document:
-OPENAI_API_KEY=sk-... docker compose run --rm iroko ingest.py --input /data/report.docx
-
-# Run the regression tests (no API key needed):
-docker compose run --rm test
+docker compose up web        # → http://localhost:8000
 ```
 
-## 🦙 Ollama: local models, no API key
+Upload a PDF, a Word contract, a PowerPoint deck or even a scanned document; pick it in the list; ask *"quels sont les livrables ?"* — the answer cites the exact sections it used (`📎 Livrables attendus`).
 
-The LLM layer goes through [litellm](https://github.com/BerriAI/litellm), so any Ollama model works with the `ollama_chat/` prefix:
+### 2. HTTP API
 
 ```bash
-# With Docker (Ollama runs as a compose profile):
-docker compose --profile ollama up -d ollama
-docker compose exec ollama ollama pull qwen3:8b
-MODEL=ollama_chat/qwen3:8b docker compose run --rm demo
+# Index a document (any format)
+curl -X POST http://localhost:8000/api/documents -F "file=@rapport.docx"
+# → {"doc_id": "e29efba8-...", "doc_name": "rapport", "type": "md"}
 
-# Without Docker (Ollama already running on your host):
-python3 ingest.py --input doc.pdf --model ollama_chat/qwen3:8b
-# non-default host: export OLLAMA_API_BASE=http://my-server:11434
+# Ask a question
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"doc_id": "e29efba8-...", "question": "Quel est le budget ?"}'
+# → {"answer": "Le budget alloué est de 15 000 EUR...",
+#    "sources": [{"node_id": "0004", "title": "Budget", ...}]}
+
+# List documents / check server & model status
+curl http://localhost:8000/api/documents
+curl http://localhost:8000/api/health
 ```
 
-**Auto-pull:** if the selected `ollama_chat/<model>` is not in Ollama's library yet, the web server asks Ollama to pull it automatically at startup (no manual `ollama pull` needed). While the download runs, the API answers `503` with a clear message; check progress at `/api/health`.
+Interactive API docs: **http://localhost:8000/api/docs**
 
-Tips for local models: `PAGEINDEX_MAX_CONCURRENCY` (default 10) caps concurrent LLM calls — lower it for small Ollama servers. Responses that wrap JSON in prose (common with small local models) are handled by a balanced-brace fallback parser.
-
-## 🔌 Run without Ollama (llama.cpp, LM Studio, vLLM, ...)
-
-The LLM layer speaks to **any OpenAI-compatible server** — no code change, just `.env`:
+### 3. Command line — build a tree index from any file
 
 ```bash
-# 1. Start llama.cpp's server on a GGUF model:
-llama-server -m /path/to/model.gguf --port 8080
+# Office documents (Pandoc keeps the heading hierarchy)
+python3 ingest.py --input contrat.docx
+python3 ingest.py --input presentation.pptx
 
-# 2. In .env:
-MODEL=openai/local
-OPENAI_API_BASE=http://host.docker.internal:8080/v1   # http://localhost:8080/v1 outside Docker
-OPENAI_API_KEY=dummy                                   # llama.cpp ignores it, litellm requires it
+# Scanned PDF (OCR — French)
+python3 ingest.py --input scan.pdf --ocr-lang fra
+
+# Plain text: ALL-CAPS lines & 'Section :' lines become tree nodes
+python3 ingest.py --input notes.txt
+
+# Just convert to Markdown, no LLM calls
+python3 ingest.py --input rapport.docx --convert-only
 ```
 
-The same three lines work for **LM Studio**, **vLLM**, **llamafile**, or any other OpenAI-compatible endpoint — just adapt the URL.
+Each run writes `results/<name>_structure.json` — the tree index. Native PDF/Markdown also work with the original entry point (`run_pageindex.py --pdf_path doc.pdf`).
 
-**Reusing models already downloaded by Ollama** (they are plain GGUF files stored as content-addressed blobs):
+### 4. Python
 
-```bash
-ollama show --modelfile gemma4:e2b | grep FROM
-# FROM /root/.ollama/models/blobs/sha256-abc123...
-llama-server -m /root/.ollama/models/blobs/sha256-abc123... --port 8080
+```python
+from pageindex.client import PageIndexClient
+
+client = PageIndexClient(model="ollama_chat/gemma4:e2b", workspace="./workspace")
+doc_id = client.index("rapport.pdf")
+
+print(client.get_document_structure(doc_id))   # the tree (titles + summaries)
+print(client.get_page_content(doc_id, "5-7"))  # raw content of pages 5-7
 ```
 
-> ⚠️ This reuse works **one way only**. Ollama's model directory is a content-addressed store (nameless blobs + manifests), **not** a folder of `.gguf` files: never copy hand-downloaded models into it — Ollama won't see them. Keep manually downloaded GGUFs in an ordinary folder (e.g. `./models/`) and point `llama-server -m` at them.
+### 5. Your own frontend (React / Angular / vanilla)
 
-## 💬 Web chat & frontend integration
-
-You don't need to code a RAG to use one. This fork ships a small HTTP API ([`server.py`](server.py), FastAPI) plus a ready-made chat page ([`webui/index.html`](webui/index.html)):
-
-```bash
-OPENAI_API_KEY=sk-... docker compose up web
-# or with a local model:  MODEL=ollama_chat/qwen3:8b docker compose --profile ollama up web ollama
-# or copy env.example to .env once and just run:  docker compose up web
-```
-
-Open **http://localhost:8000** → upload a PDF/Word/PowerPoint/scanned document → chat with it. Interactive API docs at `/api/docs`.
-
-| Endpoint | Description |
-|---|---|
-| `GET /api/documents` | List indexed documents |
-| `POST /api/documents` | Multipart upload → convert (Pandoc/MarkItDown/OCR) → index |
-| `POST /api/chat` | `{doc_id, question}` → `{answer, sources}` (LLM tree search + grounded answer) |
-
-CORS is open, so any frontend can call the API directly. Minimal examples:
+CORS is open — call the API directly from any dev server.
 
 <details>
-<summary><b>Vanilla JS / HTML</b></summary>
+<summary><b>Vanilla JS</b></summary>
 
 ```html
 <script>
@@ -395,158 +197,103 @@ export class DocChatService {
   }
 }
 ```
-
-```ts
-// doc-chat.component.ts (standalone)
-import { Component, input, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { DocChatService, ChatResponse } from './doc-chat.service';
-
-@Component({
-  selector: 'app-doc-chat',
-  standalone: true,
-  imports: [FormsModule],
-  template: `
-    @for (m of messages(); track $index) {
-      <p><b>{{ m.role }}:</b> {{ m.text }}</p>
-    }
-    <input [(ngModel)]="question" (keyup.enter)="send()" />
-    <button (click)="send()">Send</button>
-  `,
-})
-export class DocChatComponent {
-  docId = input.required<string>();
-  question = '';
-  messages = signal<{ role: string; text: string }[]>([]);
-
-  constructor(private chat: DocChatService) {}
-
-  send() {
-    const q = this.question.trim();
-    if (!q) return;
-    this.messages.update(m => [...m, { role: 'user', text: q }]);
-    this.question = '';
-    this.chat.ask(this.docId(), q).subscribe((r: ChatResponse) =>
-      this.messages.update(m => [...m, { role: 'bot', text: r.answer }]));
-  }
-}
-```
 </details>
 
-## 🔧 Upstream issues fixed in this fork
+---
 
-Verified against the code and covered by [`tests/test_upstream_issues.py`](tests/test_upstream_issues.py):
+## 🧠 Choosing your LLM
+
+Everything goes through [LiteLLM](https://docs.litellm.ai/docs/providers) — set `MODEL` in `.env`:
+
+| Option | `.env` | Notes |
+|---|---|---|
+| **OpenAI** (default) | `OPENAI_API_KEY=sk-...` | best quality on complex PDFs |
+| **Anthropic, Gemini, …** | `ANTHROPIC_API_KEY=...` + `MODEL=anthropic/claude-sonnet-4-6` | any LiteLLM provider |
+| **Ollama** (local, free) | `MODEL=ollama_chat/gemma4:e2b` | missing models are **pulled automatically**; progress at `/api/health` |
+| **llama.cpp / LM Studio / vLLM** | `MODEL=openai/local` + `OPENAI_API_BASE=http://host.docker.internal:8080/v1` + `OPENAI_API_KEY=dummy` | any OpenAI-compatible endpoint |
+
+**Reusing models already downloaded by Ollama with llama.cpp** (they are plain GGUF blobs):
+
+```bash
+ollama show --modelfile gemma4:e2b | grep FROM
+# FROM /root/.ollama/models/blobs/sha256-abc123...
+llama-server -m /root/.ollama/models/blobs/sha256-abc123... --port 8080
+```
+
+> ⚠️ One-way only: Ollama's model directory is a content-addressed store (nameless blobs + manifests), **not** a folder of `.gguf` files. Never copy hand-downloaded models into it — keep them in an ordinary folder (e.g. `./models/`) and point `llama-server -m` at them.
+
+Tuning for small local models: `PAGEINDEX_MAX_CONCURRENCY` (default 10) caps concurrent LLM calls; `CONTEXT_MAX_CHARS` (default 40000) caps answer context. Responses that wrap JSON in prose (common with small models) are handled by a balanced-brace fallback parser.
+
+---
+
+## 🌲 How it works
+
+1. **Indexing** — the document is converted to a hierarchical **tree**: every section becomes a node with a title, a summary, and its location (pages or lines).
+
+```jsonc
+{
+  "title": "Financial Stability",
+  "node_id": "0006",
+  "start_index": 21,
+  "end_index": 22,
+  "summary": "The Federal Reserve ...",
+  "nodes": [
+    { "title": "Monitoring Financial Vulnerabilities", "node_id": "0007", ... },
+    { "title": "Domestic and International Cooperation", "node_id": "0008", ... }
+  ]
+}
+```
+
+2. **Retrieval** — no embeddings: the LLM reads the tree (titles + summaries) and *reasons* about which nodes can answer the question — like a human using a table of contents.
+
+3. **Answer** — a second LLM call answers **only** from the selected sections and returns them as sources. If the selection comes back empty (small local models sometimes do that), the server falls back to the whole tree instead of refusing.
+
+Ideal for long, structured documents: financial reports, contracts, tenders, technical manuals, academic papers.
+
+---
+
+## 🔧 Fixed upstream issues
+
+Each one verified in code and covered by [`tests/test_upstream_issues.py`](tests/test_upstream_issues.py):
 
 | Upstream issue | Fix |
 |---|---|
 | [#330](https://github.com/VectifyAI/PageIndex/issues/330) `get_leaf_nodes` KeyError on leaf nodes | `.get('nodes')` — `clean_node()` deletes the key on leaves |
-| [#326](https://github.com/VectifyAI/PageIndex/issues/326) `extract_json` crashes on non-strict model JSON (DeepSeek, Ollama, ...) | balanced-brace fallback extracts the first `{...}`/`[...]` from prose-wrapped responses |
-| [#283](https://github.com/VectifyAI/PageIndex/issues/283) unthrottled concurrent LLM calls → HTTP 429 | per-event-loop semaphore in `llm_acompletion`, `PAGEINDEX_MAX_CONCURRENCY` env |
+| [#326](https://github.com/VectifyAI/PageIndex/issues/326) `extract_json` crash on non-strict model JSON (DeepSeek, Ollama, …) | balanced-brace fallback extracts the first `{...}`/`[...]` from prose-wrapped responses |
+| [#283](https://github.com/VectifyAI/PageIndex/issues/283) unthrottled concurrent LLM calls → HTTP 429 | per-event-loop semaphore, `PAGEINDEX_MAX_CONCURRENCY` env |
 | [#279](https://github.com/VectifyAI/PageIndex/issues/279)/[#296](https://github.com/VectifyAI/PageIndex/issues/296) `get_page_content` over-collects on Markdown comma lists | exact line matching instead of the `[min, max]` window |
-| [#245](https://github.com/VectifyAI/PageIndex/issues/245) Markdown parser drops preamble & headerless docs | preamble captured as a node (frontmatter excluded); headerless docs become a single root node |
+| [#245](https://github.com/VectifyAI/PageIndex/issues/245) Markdown preamble silently dropped, headerless docs yield zero nodes | preamble captured as a node (frontmatter excluded); headerless docs become a single root node |
 
-## 🚀 Agentic Vectorless RAG: An Example
+---
 
-For a simple, end-to-end **agentic vectorless RAG** example using **self-hosted PageIndex** (with OpenAI Agents SDK), see [`examples/agentic_vectorless_rag_demo.py`](examples/agentic_vectorless_rag_demo.py).
+## 🧪 Tests & quality eval
 
 ```bash
-# Install optional dependency
-pip3 install openai-agents
-
-# Run the demo
-python3 examples/agentic_vectorless_rag_demo.py
+docker compose run --rm test     # 36 unit/regression tests, no API key needed
+python3 eval_chat.py             # end-to-end chat eval against the live server
 ```
 
-<!--
-# ☁️ Improved Tree Generation with PageIndex OCR
-
-This repo is designed for generating PageIndex tree structure for simple PDFs, but many real-world use cases involve complex PDFs that are hard to parse by classic Python tools. However, extracting high-quality text from PDF documents remains a non-trivial challenge. Most OCR tools only extract page-level content, losing the broader document context and hierarchy.
-
-To address this, we introduced PageIndex OCR — the first long-context OCR model designed to preserve the global structure of documents. PageIndex OCR significantly outperforms other leading OCR tools, such as those from Mistral and Contextual AI, in recognizing true hierarchy and semantic relationships across document pages.
-
-- Experience next-level OCR quality with PageIndex OCR at our [Dashboard](https://dash.pageindex.ai/).
-- Integrate PageIndex OCR seamlessly into your stack via our [API](https://docs.pageindex.ai/quickstart).
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/eb35d8ae-865c-4e60-a33b-ebbd00c41732" width="80%">
-</p>
--->
+The eval asks known questions about indexed documents and checks expected keywords and cited sources — use it to compare models (`gemma4:e2b` vs `mistral` vs GPT-4o) on *your* documents.
 
 ---
 
-# 📈 Case Study: PageIndex Leads Finance QA Benchmark
+## 📁 Repository layout
 
-[Mafin 2.5](https://vectify.ai/mafin) is a reasoning-based RAG system for financial document analysis, powered by **PageIndex**. It achieved a state-of-the-art [**98.7% accuracy**](https://vectify.ai/blog/Mafin2.5) on [FinanceBench](https://arxiv.org/abs/2311.11944) (financial document QA benchmark), significantly outperforming traditional vector-based RAG systems.
-
-PageIndex's hierarchical indexing and reasoning-driven retrieval enable precise navigation and extraction of relevant context from complex financial reports, such as SEC filings and earnings disclosures.
-
-Explore the full [benchmark results](https://github.com/VectifyAI/Mafin2.5-FinanceBench) and our [blog post](https://vectify.ai/blog/Mafin2.5) for detailed comparisons and performance metrics.
-
-<div align="center">
-  <a href="https://github.com/VectifyAI/Mafin2.5-FinanceBench">
-    <img src="https://github.com/user-attachments/assets/571aa074-d803-43c7-80c4-a04254b782a3" width="70%">
-  </a>
-</div>
+```
+ingest.py            # universal ingestion CLI (any format → tree)
+server.py            # FastAPI: upload + chat API, serves the web UI
+webui/index.html     # dependency-free chat page
+eval_chat.py         # chat quality eval
+docker-compose.yml   # web / demo / test / ollama services
+pageindex/           # core engine (tree building, retrieval) — from upstream
+examples/            # sample documents & tutorials — from upstream
+tests/               # 36 regression tests
+```
 
 ---
 
-# 🧭 Resources
+## 🙏 Credits & license
 
-* 📝 [Blog](https://pageindex.ai/blog): technical articles, research insights, and product updates.
-* 🔧 [Developer](https://pageindex.ai/developer): MCP setup, API docs, and integration guides.
-* 🧪 [Cookbooks](https://docs.pageindex.ai/cookbook): hands-on, runnable examples and advanced use cases.
-* 📖 [Tutorials](https://docs.pageindex.ai/tutorials): practical guides and strategies, including *Document Search* and *Tree Search*.
+Core engine by [Vectify AI](https://vectify.ai) — [PageIndex](https://github.com/VectifyAI/PageIndex) ([docs](https://docs.pageindex.ai), [Discord](https://discord.com/invite/VuXuf29EUj)). They also offer a hosted [API & dashboard](https://pageindex.ai) with a proprietary long-context OCR.
 
----
-
-# ⭐ Support Us
-
-Leave us a star 🌟 if you like our project. Thank you!  
-
-<p>
-  <img src="https://github.com/user-attachments/assets/eae4ff38-48ae-4a7c-b19f-eab81201d794" width="80%">
-</p>
-
-Please cite this work as:
-```
-Mingtian Zhang, Yu Tang and PageIndex Team,
-"PageIndex: Next-Generation Vectorless, Reasoning-based RAG",
-PageIndex Blog, Sep 2025.
-```
-
-<details>
-<summary>Or use the BibTeX citation.</summary>
-
-```bibtex
-@article{zhang2025pageindex,
-  author = {Mingtian Zhang and Yu Tang and PageIndex Team},
-  title = {PageIndex: Next-Generation Vectorless, Reasoning-based RAG},
-  journal = {PageIndex Blog},
-  year = {2025},
-  month = {September},
-  note = {https://pageindex.ai/blog/pageindex-intro},
-}
-```
-</details>
-
-
-### 🌐 Open-Source Ecosystem
-
-[PageIndex](https://github.com/VectifyAI/PageIndex) anchors a growing open-source [ecosystem](https://docs.pageindex.ai/open-source) of **long-context AI infra** — [OpenKB](https://github.com/VectifyAI/OpenKB) is an LLM knowledge base that compiles documents into an interlinked wiki. [ChatIndex](https://github.com/VectifyAI/ChatIndex) provides tree indexing and retrieval for long conversational histories and memory. [ConDB](https://github.com/VectifyAI/ConDB) is a KV-cache native context database for tree-based retrieval at scale. [PageIndex MCP](https://github.com/VectifyAI/pageindex-mcp) is PageIndex's MCP server.
-
-### Connect with Us
-
-<div align="center">
-
-[![Website](https://img.shields.io/badge/Website-2D72CF?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTEyIDEgMSAxMWgyLjV2MTJoNnYtN2g1djdoNlYxMUgyM3oiLz48L3N2Zz4%3D)](https://pageindex.ai)&nbsp;
-[![Twitter](https://img.shields.io/badge/Twitter-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/PageIndexAI)&nbsp;
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTIwLjQ1IDIwLjQ1aC0zLjU1di01LjU3YzAtMS4zMy0uMDMtMy4wNC0xLjg1LTMuMDQtMS44NSAwLTIuMTQgMS40NS0yLjE0IDIuOTR2NS42N0g5LjM1VjloMy40MXYxLjU2aC4wNWMuNDgtLjkgMS42NC0xLjg1IDMuMzctMS44NSAzLjYgMCA0LjI3IDIuMzcgNC4yNyA1LjQ2djYuMjh6TTUuMzQgNy40M2EyLjA2IDIuMDYgMCAxIDEgMC00LjEzIDIuMDYgMi4wNiAwIDAgMSAwIDQuMTN6TTcuMTIgMjAuNDVIMy41NlY5aDMuNTZ2MTEuNDV6TTIyLjIyIDBIMS43N0MuNzkgMCAwIC43NyAwIDEuNzN2MjAuNTRDMCAyMy4yMy43OSAyNCAxLjc3IDI0aDIwLjQ1QzIzLjIgMjQgMjQgMjMuMjMgMjQgMjIuMjdWMS43M0MyNCAuNzcgMjMuMiAwIDIyLjIyIDB6Ii8%2BPC9zdmc%2B)](https://www.linkedin.com/company/vectify-ai/)&nbsp;
-[![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/VuXuf29EUj)&nbsp;
-[![Book a Demo](https://img.shields.io/badge/Book_a_Demo-6E7E96?style=for-the-badge&logo=googlecalendar&logoColor=white)](https://calendly.com/pageindex/meet)&nbsp;
-[![Contact Us](https://img.shields.io/badge/Contact_Us-3B82F6?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjIgNCAyMCAxNiI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTIwIDRINGMtMS4xIDAtMiAuOS0yIDJ2MTJjMCAxLjEuOSAyIDIgMmgxNmMxLjEgMCAyLS45IDItMlY2YzAtMS4xLS45LTItMi0yem0wIDQtOCA1LTgtNVY2bDggNSA4LTV6Ii8%2BPC9zdmc%2B)](https://ii2abc2jejf.typeform.com/to/tK3AXl8T)
-
-</div>
-
----
-
-© 2026 [Vectify AI](https://vectify.ai)
+Fork maintained by [@GhislainAdon](https://github.com/GhislainAdon). Same license as upstream — see [LICENSE](LICENSE).
