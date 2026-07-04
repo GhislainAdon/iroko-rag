@@ -56,16 +56,19 @@ def _get_pdf_page_content(doc_info: dict, page_nums: list[int]) -> list[dict]:
 def _get_md_page_content(doc_info: dict, page_nums: list[int]) -> list[dict]:
     """
     For Markdown documents, 'pages' are line numbers.
-    Find nodes whose line_num falls within [min(page_nums), max(page_nums)] and return their text.
+    Return nodes whose line_num is in page_nums. _parse_pages has already
+    expanded ranges ('5-7' -> [5, 6, 7]), so a comma list like '3,8' must
+    match exactly those lines — treating it as the inclusive window
+    [min, max] silently pulled in every node in between.
     """
-    min_line, max_line = min(page_nums), max(page_nums)
+    wanted = set(page_nums)
     results = []
     seen = set()
 
     def _traverse(nodes):
         for node in nodes:
             ln = node.get('line_num')
-            if ln and min_line <= ln <= max_line and ln not in seen:
+            if ln and ln in wanted and ln not in seen:
                 seen.add(ln)
                 results.append({'page': ln, 'content': node.get('text', '')})
             if node.get('nodes'):

@@ -1,0 +1,51 @@
+# iroko-rag — ready-to-use demo & runtime
+#
+# Public API (OpenAI/Anthropic/... via litellm):
+#   OPENAI_API_KEY=sk-... docker compose run --rm demo
+#   docker compose run --rm iroko ingest.py --input /data/report.docx
+#
+# Local models via Ollama (no API key needed):
+#   docker compose --profile ollama up -d ollama
+#   docker compose exec ollama ollama pull qwen3:8b
+#   MODEL=ollama_chat/qwen3:8b docker compose run --rm demo
+#
+# Put your documents in ./data (mounted as /data); trees land in ./results.
+
+services:
+  iroko:
+    build: .
+    image: iroko-rag:local
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://ollama:11434}
+      PAGEINDEX_MAX_CONCURRENCY: ${PAGEINDEX_MAX_CONCURRENCY:-10}
+    volumes:
+      - ./data:/data
+      - ./results:/app/results
+
+  # Ready-to-use demo: builds the tree index of a small bundled PDF
+  # (10-K earnings report) with the model of your choice.
+  demo:
+    extends: iroko
+    command: ["ingest.py",
+              "--input", "examples/documents/q1-fy25-earnings.pdf",
+              "--model", "${MODEL:-gpt-4o-2024-11-20}"]
+
+  # Regression tests (no LLM calls, no API key needed):
+  #   docker compose run --rm test
+  test:
+    extends: iroko
+    command: ["-m", "pytest", "tests/", "-v"]
+
+  # Local LLM backend — opt in with: docker compose --profile ollama up -d
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:

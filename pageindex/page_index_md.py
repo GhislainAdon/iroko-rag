@@ -59,23 +59,48 @@ def extract_nodes_from_markdown(markdown_content):
     return node_list, lines
 
 
-def extract_node_text_content(node_list, markdown_lines):    
+def extract_node_text_content(node_list, markdown_lines, fallback_title='Document'):
     all_nodes = []
     for node in node_list:
         line_content = markdown_lines[node['line_num'] - 1]
         header_match = re.match(r'^(#{1,6})', line_content)
-        
+
         if header_match is None:
             print(f"Warning: Line {node['line_num']} does not contain a valid header: '{line_content}'")
             continue
-            
+
         processed_node = {
             'title': node['node_title'],
             'line_num': node['line_num'],
             'level': len(header_match.group(1))
         }
         all_nodes.append(processed_node)
-    
+
+    # Headerless document: keep the full content as a single root node
+    # instead of silently discarding everything.
+    if not all_nodes:
+        text = '\n'.join(markdown_lines).strip()
+        if not text:
+            return []
+        return [{'title': fallback_title, 'line_num': 1, 'level': 1,
+                 'text': text}]
+
+    # Content before the first header (abstract, intro, ...) was silently
+    # dropped: capture it as a preamble node. A leading YAML frontmatter
+    # block is metadata, not content, so it doesn't count by itself.
+    content_start = 0
+    if markdown_lines and markdown_lines[0].strip() == '---':
+        for idx in range(1, len(markdown_lines)):
+            if markdown_lines[idx].strip() == '---':
+                content_start = idx + 1
+                break
+    first_header_line = all_nodes[0]['line_num']
+    preamble_lines = markdown_lines[content_start:first_header_line - 1]
+    if any(line.strip() for line in preamble_lines):
+        all_nodes.insert(0, {'title': 'Preamble',
+                             'line_num': content_start + 1,
+                             'level': all_nodes[0]['level']})
+
     for i, node in enumerate(all_nodes):
         start_line = node['line_num'] - 1 
         if i + 1 < len(all_nodes):
@@ -249,7 +274,9 @@ async def md_to_tree(md_path, if_thinning=False, min_token_threshold=None, if_ad
     node_list, markdown_lines = extract_nodes_from_markdown(markdown_content)
 
     print(f"Extracting text content from nodes...")
-    nodes_with_content = extract_node_text_content(node_list, markdown_lines)
+    doc_name = os.path.splitext(os.path.basename(md_path))[0]
+    nodes_with_content = extract_node_text_content(node_list, markdown_lines,
+                                                   fallback_title=doc_name)
     
     if if_thinning:
         nodes_with_content = update_node_list_with_text_token_count(nodes_with_content, model=model)

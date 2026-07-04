@@ -17,6 +17,7 @@ import yaml
 from pathlib import Path
 from types import SimpleNamespace as config
 import re
+import weakref
 
 # Backward compatibility: support CHATGPT_API_KEY as alias for OPENAI_API_KEY
 if not os.getenv("OPENAI_API_KEY") and os.getenv("CHATGPT_API_KEY"):
@@ -27,7 +28,30 @@ litellm.drop_params = True
 def count_tokens(text, model=None):
     if not text:
         return 0
-    return litellm.token_counter(model=model, text=text)
+    try:
+        return litellm.token_counter(model=model, text=text)
+    except Exception:
+        # Models unknown to litellm's tokenizer map (e.g. ollama_chat/*)
+        # fall back to the default tokenizer instead of crashing.
+        return litellm.token_counter(model=None, text=text)
+
+
+# Client-side throttle for concurrent LLM calls. The tree-generation code
+# fans out with asyncio.gather at several places; without a cap this floods
+# rate-limited endpoints (HTTP 429) and local Ollama servers. One semaphore
+# per event loop, since the pipeline calls asyncio.run() from several
+# entry points.
+MAX_CONCURRENT_LLM_CALLS = int(os.getenv("PAGEINDEX_MAX_CONCURRENCY", "10"))
+_llm_semaphores = weakref.WeakKeyDictionary()
+
+
+def _llm_semaphore():
+    loop = asyncio.get_running_loop()
+    sem = _llm_semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(MAX_CONCURRENT_LLM_CALLS)
+        _llm_semaphores[loop] = sem
+    return sem
 
 
 def llm_completion(model, prompt, chat_history=None, return_finish_reason=False):
@@ -67,11 +91,12 @@ async def llm_acompletion(model, prompt):
     messages = [{"role": "user", "content": prompt}]
     for i in range(max_retries):
         try:
-            response = await litellm.acompletion(
-                model=model,
-                messages=messages,
-                temperature=0,
-            )
+            async with _llm_semaphore():
+                response = await litellm.acompletion(
+                    model=model,
+                    messages=messages,
+                    temperature=0,
+                )
             return response.choices[0].message.content
         except Exception as e:
             print('************* Retrying *************')
@@ -96,6 +121,43 @@ def get_json_content(response):
     json_content = response.strip()
     return json_content
          
+
+def _extract_balanced_json(content):
+    """Pull the first balanced {...} or [...] out of a response that wraps
+    JSON in prose or code fences. Models routed through non-strict providers
+    (DeepSeek, local Ollama models, ...) often do this; without a fallback a
+    single such response aborts the whole index build."""
+    closers = {'{': '}', '[': ']'}
+    # Walk candidate start positions in order; a candidate that turns out
+    # not to be JSON (e.g. '{this}' in prose) just moves on to the next.
+    for start, open_ch in ((i, c) for i, c in enumerate(content) if c in closers):
+        close_ch = closers[open_ch]
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(content)):
+            ch = content[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == '\\':
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == open_ch:
+                depth += 1
+            elif ch == close_ch:
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(content[start:i + 1])
+                    except json.JSONDecodeError:
+                        break
+    return None
+
 
 def extract_json(content):
     try:
@@ -124,6 +186,9 @@ def extract_json(content):
             json_content = json_content.replace(',]', ']').replace(',}', '}')
             return json.loads(json_content)
         except:
+            result = _extract_balanced_json(content)
+            if result is not None:
+                return result
             logging.error("Failed to parse JSON even after cleanup")
             return {}
     except Exception as e:
@@ -173,7 +238,10 @@ def structure_to_list(structure):
     
 def get_leaf_nodes(structure):
     if isinstance(structure, dict):
-        if not structure['nodes']:
+        # clean_node() in list_to_tree() deletes the 'nodes' key on leaf
+        # nodes instead of leaving an empty list, so direct access raises
+        # KeyError here.
+        if not structure.get('nodes'):
             structure_node = copy.deepcopy(structure)
             structure_node.pop('nodes', None)
             return [structure_node]

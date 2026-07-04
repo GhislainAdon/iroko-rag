@@ -224,6 +224,50 @@ python3 ingest.py --input anything.docx --convert-only   # just emit Markdown, n
 
 If the converted Markdown contains no headings (e.g. a `.docx` without heading styles), the document is wrapped under a single root node so the pipeline still produces a usable tree.
 
+## 🐳 Docker: ready-to-use demo
+
+Everything (Python deps + Pandoc + Tesseract eng/fra) ships in one image. Put your documents in `./data`, trees land in `./results`.
+
+```bash
+# One-shot demo on a bundled sample PDF (OpenAI):
+OPENAI_API_KEY=sk-... docker compose run --rm demo
+
+# Index your own document:
+OPENAI_API_KEY=sk-... docker compose run --rm iroko ingest.py --input /data/report.docx
+
+# Run the regression tests (no API key needed):
+docker compose run --rm test
+```
+
+## 🦙 Ollama: local models, no API key
+
+The LLM layer goes through [litellm](https://github.com/BerriAI/litellm), so any Ollama model works with the `ollama_chat/` prefix:
+
+```bash
+# With Docker (Ollama runs as a compose profile):
+docker compose --profile ollama up -d ollama
+docker compose exec ollama ollama pull qwen3:8b
+MODEL=ollama_chat/qwen3:8b docker compose run --rm demo
+
+# Without Docker (Ollama already running on your host):
+python3 ingest.py --input doc.pdf --model ollama_chat/qwen3:8b
+# non-default host: export OLLAMA_API_BASE=http://my-server:11434
+```
+
+Tips for local models: `PAGEINDEX_MAX_CONCURRENCY` (default 10) caps concurrent LLM calls — lower it for small Ollama servers. Responses that wrap JSON in prose (common with small local models) are handled by a balanced-brace fallback parser.
+
+## 🔧 Upstream issues fixed in this fork
+
+Verified against the code and covered by [`tests/test_upstream_issues.py`](tests/test_upstream_issues.py):
+
+| Upstream issue | Fix |
+|---|---|
+| [#330](https://github.com/VectifyAI/PageIndex/issues/330) `get_leaf_nodes` KeyError on leaf nodes | `.get('nodes')` — `clean_node()` deletes the key on leaves |
+| [#326](https://github.com/VectifyAI/PageIndex/issues/326) `extract_json` crashes on non-strict model JSON (DeepSeek, Ollama, ...) | balanced-brace fallback extracts the first `{...}`/`[...]` from prose-wrapped responses |
+| [#283](https://github.com/VectifyAI/PageIndex/issues/283) unthrottled concurrent LLM calls → HTTP 429 | per-event-loop semaphore in `llm_acompletion`, `PAGEINDEX_MAX_CONCURRENCY` env |
+| [#279](https://github.com/VectifyAI/PageIndex/issues/279)/[#296](https://github.com/VectifyAI/PageIndex/issues/296) `get_page_content` over-collects on Markdown comma lists | exact line matching instead of the `[min, max]` window |
+| [#245](https://github.com/VectifyAI/PageIndex/issues/245) Markdown parser drops preamble & headerless docs | preamble captured as a node (frontmatter excluded); headerless docs become a single root node |
+
 ## 🚀 Agentic Vectorless RAG: An Example
 
 For a simple, end-to-end **agentic vectorless RAG** example using **self-hosted PageIndex** (with OpenAI Agents SDK), see [`examples/agentic_vectorless_rag_demo.py`](examples/agentic_vectorless_rag_demo.py).
