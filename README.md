@@ -197,6 +197,33 @@ python3 run_pageindex.py --md_path /path/to/your/document.md
 > Note: in this mode, we use "#" to determine node headings and their levels. For example, "##" is level 2, "###" is level 3, etc. Make sure your markdown file is formatted correctly. If your Markdown file was converted from a PDF or HTML, we don't recommend using this mode, since most existing conversion tools cannot preserve the original hierarchy. Instead, use our [PageIndex OCR](https://pageindex.ai/blog/ocr), which is designed to preserve it, to convert the PDF to a markdown file and then use this mode.
 </details>
 
+## 📥 Universal Ingestion (this fork)
+
+This fork adds [`ingest.py`](ingest.py): one entry point for **any** document format, including scanned PDFs.
+
+| Input | Route |
+|---|---|
+| PDF with text layer | Native PageIndex pipeline (unchanged) |
+| Scanned PDF (no text layer) | OCR: `ocrmypdf` if installed (keeps page numbers), else Tesseract → Markdown |
+| `.docx` `.odt` `.rtf` `.epub` `.html` `.tex` `.rst` `.org` | Pandoc → Markdown (heading styles become `#`/`##`) |
+| `.pptx` `.xlsx` `.csv` `.msg` and anything else | MarkItDown → Markdown |
+| `.md` | Native Markdown pipeline (unchanged) |
+
+```bash
+# System tools (install what you need):
+#   pandoc      https://pandoc.org  — office/text formats
+#   tesseract   OCR engine          — scanned PDFs
+#   ocrmypdf    (optional, better)  — pip3 install ocrmypdf
+pip3 install markitdown pytesseract pillow
+
+python3 ingest.py --input report.docx
+python3 ingest.py --input slides.pptx
+python3 ingest.py --input scanned.pdf --ocr-lang fra
+python3 ingest.py --input anything.docx --convert-only   # just emit Markdown, no LLM calls
+```
+
+If the converted Markdown contains no headings (e.g. a `.docx` without heading styles), the document is wrapped under a single root node so the pipeline still produces a usable tree.
+
 ## 🚀 Agentic Vectorless RAG: An Example
 
 For a simple, end-to-end **agentic vectorless RAG** example using **self-hosted PageIndex** (with OpenAI Agents SDK), see [`examples/agentic_vectorless_rag_demo.py`](examples/agentic_vectorless_rag_demo.py).
