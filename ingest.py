@@ -130,10 +130,65 @@ def heuristic_headers(lines):
     return out, changed
 
 
-def ensure_headers(md_path, fallback_title):
+LLM_STRUCTURE_PROMPT = """\
+Below is a flat document with no markup. Identify the lines that are \
+section headings (titles that introduce a new section of the document).
+
+Rules:
+- Each heading MUST be an exact, verbatim copy of one full line of the \
+document — same characters, same accents, no rewording.
+- Only real section titles, not list items or sentences.
+- If the document has no headings, return an empty list.
+
+Reply in this JSON format:
+{{"headings": ["<exact line>", "<exact line>"]}}
+
+Document:
+{document}
+"""
+
+
+def llm_structure_headers(content, model=None):
+    """Stage-2 structuring: ask the LLM which lines are section headings and
+    promote ONLY verbatim matches (same grounding idea as Google's
+    LangExtract — an exact-copy requirement makes hallucinated or
+    paraphrased titles unmatchable, so they are simply dropped).
+
+    Returns the restructured content, or None if unavailable/no match."""
+    try:
+        from pageindex.utils import ConfigLoader, extract_json, llm_completion
+    except ImportError:
+        return None
+    try:
+        if model is None:
+            model = ConfigLoader().load().model
+        response = llm_completion(model,
+                                  LLM_STRUCTURE_PROMPT.format(document=content[:30000]))
+        headings = extract_json(response).get('headings') or []
+    except Exception as e:
+        print(f'warning: LLM structuring failed: {e}', file=sys.stderr)
+        return None
+    wanted = {h.strip() for h in headings
+              if isinstance(h, str) and 0 < len(h.strip()) <= 120}
+    if not wanted:
+        return None
+    out = []
+    changed = False
+    for line in content.split('\n'):
+        stripped = line.strip()
+        if stripped in wanted and not stripped.startswith('#'):
+            out.append('## ' + stripped)
+            changed = True
+        else:
+            out.append(line)
+    return '\n'.join(out) if changed else None
+
+
+def ensure_headers(md_path, fallback_title, model=None, allow_llm=False):
     """md_to_tree builds the tree from '#' headers. If the conversion produced
-    none (e.g. a docx without heading styles), try to recover structure from
-    heading-like lines, then wrap everything under a root header.
+    none (e.g. a docx without heading styles), recover structure in stages:
+    cheap heuristics first, then (when allow_llm and STRUCTURE_WITH_LLM is
+    not 'no') an LLM pass, and finally wrap everything under a root header.
 
     Header detection mirrors pageindex.page_index_md.extract_nodes_from_markdown
     but stays dependency-free so --convert-only works without the package's
@@ -158,8 +213,17 @@ def ensure_headers(md_path, fallback_title):
                   'heading-like lines to headers', file=sys.stderr)
             content = '\n'.join(lines)
         else:
-            print('warning: no headings found in converted Markdown; '
-                  'wrapping content under a single root node', file=sys.stderr)
+            structured = None
+            if allow_llm and os.getenv('STRUCTURE_WITH_LLM', 'yes').lower() != 'no':
+                structured = llm_structure_headers(content, model=model)
+            if structured:
+                print('warning: no markdown headings found; promoted '
+                      'LLM-identified heading lines (verbatim-verified)',
+                      file=sys.stderr)
+                content = structured
+            else:
+                print('warning: no headings found in converted Markdown; '
+                      'wrapping content under a single root node', file=sys.stderr)
         with open(md_path, 'w', encoding='utf-8') as f:
             f.write(f'# {fallback_title}\n\n{content}')
 
@@ -276,7 +340,10 @@ def main():
                 convert_with_pandoc(input_path, md_path)
 
         if md_path != input_path:
-            ensure_headers(md_path, base)
+            # LLM structuring is only worth it when the tree will actually
+            # be built (--convert-only promises no LLM calls).
+            ensure_headers(md_path, base, model=args.model,
+                           allow_llm=not args.convert_only)
         if args.convert_only:
             print(f'Markdown written to: {md_path}')
             return

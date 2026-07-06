@@ -17,7 +17,7 @@ Fork of [VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex) that adds 
 | | |
 |---|---|
 | 🌲 **Vectorless RAG** | No embeddings, no vector DB. Documents become a semantic **tree** (like a smart table of contents); an LLM *reasons* its way to the right sections. From upstream PageIndex. |
-| 📥 **Universal ingestion** | PDF (native **and scanned** — Tesseract OCR), Word, PowerPoint, Excel, EPUB, HTML, plain `.txt` (structure recovered heuristically), Markdown… one command for any format. |
+| 📥 **Universal ingestion** | PDF (native **and scanned** — Tesseract OCR), Word, PowerPoint, Excel, EPUB, HTML, plain `.txt` (structure recovered by heuristics, then by an LLM pass with verbatim grounding), Markdown… one command for any format. |
 | 💬 **Chat without coding** | Built-in web UI: upload → ask → sourced answers. Plus an open HTTP API for your Angular/React/anything frontend. |
 | 🦙 **Any LLM** | OpenAI/Anthropic/… (via LiteLLM), **Ollama** (with auto-pull of missing models), or any OpenAI-compatible server (llama.cpp, LM Studio, vLLM). |
 | 🐳 **Docker-ready** | One image with all system deps (Pandoc, Tesseract). `demo`, `web`, `test`, `ollama` compose services. |
@@ -81,7 +81,10 @@ python3 ingest.py --input presentation.pptx
 # Scanned PDF (OCR — French)
 python3 ingest.py --input scan.pdf --ocr-lang fra
 
-# Plain text: ALL-CAPS lines & 'Section :' lines become tree nodes
+# Plain text: ALL-CAPS lines & 'Section :' lines become tree nodes.
+# If the heuristics find nothing, an LLM identifies the heading lines —
+# only lines it quotes VERBATIM from the text are promoted, so it cannot
+# hallucinate structure. Disable with STRUCTURE_WITH_LLM=no.
 python3 ingest.py --input notes.txt
 
 # Just convert to Markdown, no LLM calls

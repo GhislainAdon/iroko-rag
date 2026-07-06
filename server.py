@@ -221,7 +221,8 @@ def _to_indexable(upload_path):
             return upload_path
         md_path = base + '.md'
         ocr_pdf_to_markdown(upload_path, md_path, OCR_LANG)
-        ensure_headers(md_path, os.path.basename(base))
+        ensure_headers(md_path, os.path.basename(base),
+                       model=client.model, allow_llm=True)
         return md_path
     md_path = base + '.md'
     if ext in PANDOC_EXTS:
@@ -233,7 +234,8 @@ def _to_indexable(upload_path):
             convert_with_markitdown(upload_path, md_path)
         except Exception:
             convert_with_pandoc(upload_path, md_path)
-    ensure_headers(md_path, os.path.basename(base))
+    ensure_headers(md_path, os.path.basename(base),
+                   model=client.model, allow_llm=True)
     return md_path
 
 
